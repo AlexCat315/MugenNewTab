@@ -7,11 +7,12 @@
  */
 import { computed } from 'vue';
 import IconSvg from '@/components/icon/IconSvg.vue';
+import { getBrandLogo } from '@/utils/browser.util';
 
 export interface AppHeaderProps {
     /** 主标题 */
     title?: string;
-    /** Logo 图片地址 */
+    /** Logo 图片地址；不传时按浏览器自动选择（Edge 用旧 Logo，其余用新 Logo） */
     logoSrc?: string;
     /** 是否显示侧边栏折叠按钮 */
     showCollapseToggle?: boolean;
@@ -25,7 +26,7 @@ export interface AppHeaderProps {
 
 const props = withDefaults(defineProps<AppHeaderProps>(), {
     title: 'Mugen新标签页',
-    logoSrc: '/image/logo/mugen.png',
+    logoSrc: '',
     showCollapseToggle: true,
     sidebarCollapsed: false,
     showPersonalizationToggle: true,
@@ -37,6 +38,9 @@ const emit = defineEmits<{
     (e: 'toggle-personalization'): void;
     (e: 'menu-click'): void;
 }>();
+
+/** 未显式传入 logoSrc 时按浏览器分流品牌 Logo */
+const resolvedLogoSrc = computed(() => props.logoSrc || getBrandLogo());
 
 const collapseIconName = computed(() => (props.sidebarCollapsed ? 'Expand' : 'Fold'));
 
@@ -67,7 +71,7 @@ function handleMenuClick(): void {
 
             <div class="brand">
                 <div class="brand-icon is-image">
-                    <img :src="logoSrc" alt="Mugen" loading="lazy" />
+                    <img :src="resolvedLogoSrc" alt="Mugen" loading="lazy" />
                 </div>
                 <div class="brand-text">
                     <h1>{{ title }}</h1>
@@ -118,14 +122,14 @@ function handleMenuClick(): void {
     left: 0;
     right: 0;
     height: var(--header-height);
-    background: linear-gradient(135deg, var(--md-sys-color-primary) 0%, var(--md-sys-color-secondary) 100%);
-    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
     padding: 0 16px;
     z-index: 1000;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .header-brand {
@@ -148,7 +152,7 @@ function handleMenuClick(): void {
 
 .collapse-toggle-btn {
     @include button-reset;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--md-sys-color-on-surface-variant);
     width: 28px;
     height: 28px;
     border-radius: 6px;
@@ -158,21 +162,13 @@ function handleMenuClick(): void {
     @include md-transition(color transform);
 
     &:hover {
-        color: #fff;
+        color: var(--md-sys-color-primary);
+        background: var(--md-sys-color-surface-variant);
         transform: scale(1.1);
     }
 
     &:active {
         transform: scale(0.95);
-    }
-
-    :deep(.icon-svg) {
-        filter: brightness(0) invert(1);
-        opacity: 0.8;
-    }
-
-    &:hover :deep(.icon-svg) {
-        opacity: 1;
     }
 }
 
@@ -222,7 +218,7 @@ function handleMenuClick(): void {
     h1 {
         font-size: 1.05rem;
         font-weight: 600;
-        color: #fff;
+        color: var(--md-sys-color-primary);
         margin: 0;
         letter-spacing: -0.3px;
         line-height: 1.2;
@@ -233,10 +229,10 @@ function handleMenuClick(): void {
     display: none;
     width: 32px;
     height: 32px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: var(--md-sys-color-surface-variant);
+    border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: 8px;
-    color: #fff;
+    color: var(--md-sys-color-on-surface);
     cursor: pointer;
     align-items: center;
     justify-content: center;
@@ -244,11 +240,8 @@ function handleMenuClick(): void {
     flex-shrink: 0;
 
     &:hover {
-        background: rgba(255, 255, 255, 0.2);
-    }
-
-    :deep(.icon-svg) {
-        filter: brightness(0) invert(1);
+        background: var(--md-sys-color-primary-container);
+        color: var(--md-sys-color-primary);
     }
 }
 
@@ -265,28 +258,28 @@ function handleMenuClick(): void {
     align-items: center;
     gap: 8px;
     padding: 8px 16px;
-    background: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
     border-radius: 24px;
-    color: var(--md-sys-color-on-primary);
+    color: var(--md-sys-color-primary);
     font-size: 14px;
     font-weight: 600;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.1);
+    box-shadow: none;
     @include md-transition(all, 0.25s);
 
     &::before {
         content: '';
         position: absolute;
         inset: 0;
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0) 50%);
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 50%);
         opacity: 0;
         @include md-transition(opacity);
     }
 
     &:hover {
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     }
 
     &:hover::before {
@@ -295,15 +288,11 @@ function handleMenuClick(): void {
 
     &:active {
         transform: translateY(0);
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+        box-shadow: none;
     }
 
     &.active .dropdown-arrow :deep(.icon-svg) {
         transform: rotate(180deg);
-    }
-
-    :deep(.icon-svg) {
-        filter: brightness(0) invert(1);
     }
 }
 

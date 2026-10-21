@@ -79,6 +79,8 @@ export interface LayoutSettings {
     allViewFlat: boolean;
     /** 是否显示站点卡片图标背景（false 时图标背景透明） */
     showIconBackground: boolean;
+    /** 极简约模式 */
+    minimalMode?: boolean;
 }
 
 /** 本地壁纸图片元数据 */

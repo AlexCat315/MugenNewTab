@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
 import AppHeader from '@/components/layout/AppHeader.vue';
 
 describe('AppHeader', () => {
+    beforeEach(() => {
+        setActivePinia(createPinia());
+    });
+
     it('渲染品牌标题', () => {
         const wrapper = mount(AppHeader, {
             props: {

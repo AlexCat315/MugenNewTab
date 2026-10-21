@@ -28,6 +28,7 @@ import WallpaperLayer from '@/components/layout/WallpaperLayer.vue';
 import AppHeader from '@/components/layout/AppHeader.vue';
 import Sidebar from '@/components/layout/Sidebar.vue';
 import MainContent from '@/components/layout/MainContent.vue';
+import MinimalHome from '@/components/layout/MinimalHome.vue';
 import FabMenu from '@/components/layout/FabMenu.vue';
 import SearchModal from '@/components/search/SearchModal.vue';
 import AppEditModal from '@/components/appForm/AppEditModal.vue';
@@ -80,6 +81,7 @@ const appEditInitialCategoryId = ref('');
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const headerRef = ref<InstanceType<typeof AppHeader> | null>(null);
 const headerWrapperRef = ref<HTMLDivElement | null>(null);
+const minimalHomeRef = ref<InstanceType<typeof MinimalHome> | null>(null);
 
 // ==================== 派生状态 ====================
 const currentCategory = computed<Category | undefined>(() =>
@@ -220,6 +222,13 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'h') {
         event.preventDefault();
         toggleHiddenApps();
+        return;
+    }
+    // Alt+Shift+M：切换极简约模式
+    if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm') {
+        event.preventDefault();
+        void layoutStore.setMinimalMode(!layoutStore.minimalMode);
+        return;
     }
 }
 
@@ -361,6 +370,11 @@ function handleSavedCategory(category: Category): void {
     }
 }
 
+/** 退出极简约模式，回到标准三栏布局 */
+function handleExitMinimal(): void {
+    void layoutStore.setMinimalMode(false);
+}
+
 function handleFabSelect(action: string): void {
     switch (action) {
         case 'add-app':
@@ -464,9 +478,22 @@ const fabItems = [
 </script>
 
 <template>
-    <div id="app-root" class="app-root">
+    <div id="app-root" class="app-root" :class="{ 'minimal-mode': layoutStore.minimalMode }">
         <WallpaperLayer />
 
+        <!-- ============ 极简约模式：居中搜索框 + 站点磁贴 ============ -->
+        <MinimalHome
+            v-if="layoutStore.minimalMode"
+            ref="minimalHomeRef"
+            @open-personalization="personalizationOpen = true"
+            @add-app="openAddApp(activeCategoryId)"
+            @edit-app="openEditApp"
+            @open-full-search="openSearch"
+            @open-cloud-sync="cloudSyncOpen = true"
+            @exit-minimal="handleExitMinimal"
+        />
+
+        <template v-else>
         <div ref="headerWrapperRef" class="header-wrapper">
             <AppHeader
                 ref="headerRef"
@@ -563,6 +590,7 @@ const fabItems = [
             @update:active="fabOpen = $event"
             @select="handleFabSelect"
         />
+        </template>
 
         <SearchModal v-model="searchOpen" />
 

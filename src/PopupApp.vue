@@ -10,6 +10,8 @@ import { useCurrentTab } from '@/composables/useCurrentTab';
 import { useToast } from '@/composables/useToast';
 import { browserApi } from '@/services/browserApi.service';
 import { getSystemIconUrl } from '@/utils/image.util';
+import { getBrandLogo } from '@/utils/browser.util';
+import { normalizeUrl } from '@/utils/url.util';
 
 import BaseInput from '@/components/common/BaseInput.vue';
 import BaseButton from '@/components/common/BaseButton.vue';
@@ -20,6 +22,8 @@ const NEW_CATEGORY_VALUE = '__new__';
 // 须用绝对路径：popup 页面位于 view/ 子目录，相对路径会解析为 view/image/... 导致 404
 const DEFAULT_ICON = getSystemIconUrl('picture');
 const HOME_PAGE_URL = 'https://github.com/MugenNewTab/MugenNewTab';
+/** 品牌 Logo：Edge 用旧版，其余浏览器用新版 */
+const brandLogo = getBrandLogo();
 
 const dataManager = useDataManager({ autoInit: true });
 const { title: tabTitle, url: tabUrl, favicon, isValid, isLoading } = useCurrentTab({ autoRefresh: true });
@@ -52,13 +56,19 @@ const isNewCategory = computed(() => form.value.category === NEW_CATEGORY_VALUE)
 const categoryOptions = computed(() => dataManager.userCategories.value);
 const effectiveIcon = computed(() => form.value.icon?.trim() || DEFAULT_ICON);
 
-/** 补全 URL 协议 */
-function normalizeUrl(url: string): string {
-    const trimmed = url.trim();
-    if (!trimmed) return '';
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    return `https://${trimmed}`;
-}
+/** 当前标签页网址是否已经在导航里 */
+const duplicateApp = computed(() => {
+    const url = form.value.url.trim();
+    if (!url) return undefined;
+    return dataManager.findAppByUrl(url);
+});
+
+/** 重复站点所在分类名 */
+const duplicateCategoryName = computed(() => {
+    const duplicate = duplicateApp.value;
+    if (!duplicate) return '';
+    return dataManager.getCategoryById(duplicate.category)?.name ?? '未分类';
+});
 
 /** 根据 URL 生成 favicon 服务地址，larger 为 true 时请求高清图 */
 function buildFaviconUrl(url: string, larger = false): string | null {
@@ -130,6 +140,9 @@ function validate(): boolean {
         } catch {
             errors.value.url = '请输入有效的网址';
         }
+        if (!errors.value.url && duplicateApp.value) {
+            errors.value.url = `该网站已存在：${duplicateApp.value.name}（分类：${duplicateCategoryName.value}）`;
+        }
     }
 
     if (!form.value.category) {
@@ -156,10 +169,16 @@ async function handleSubmit(): Promise<void> {
         let categoryId = form.value.category;
 
         if (categoryId === NEW_CATEGORY_VALUE) {
-            const newCategory = await dataManager.addCategory({
-                name: form.value.newCategoryName.trim(),
-            });
-            categoryId = newCategory.id;
+            // 同名分类已存在时直接复用，避免「新建分类」撞名报错
+            const existing = dataManager.findCategoryByName(form.value.newCategoryName);
+            if (existing) {
+                categoryId = existing.id;
+            } else {
+                const newCategory = await dataManager.addCategory({
+                    name: form.value.newCategoryName.trim(),
+                });
+                categoryId = newCategory.id;
+            }
         }
 
         const saved = await dataManager.addApp({
@@ -222,7 +241,7 @@ watch(
     <div id="popup-root" class="popup-root">
         <header class="popup-header">
             <div class="popup-brand" @click="openHomePage">
-                <img src="/image/logo/mugen.png" alt="Mugen" class="popup-logo" />
+                <img :src="brandLogo" alt="Mugen" class="popup-logo" />
                 <span class="popup-title">添加到 Mugen新标签页</span>
             </div>
         </header>
@@ -257,6 +276,13 @@ watch(
                     :error="errors.url"
                     @blur="handleUrlBlur"
                 />
+
+                <p v-if="duplicateApp && !errors.url" class="popup-warning">
+                    <IconSvg name="warning" :size="14" />
+                    <span>
+                        该网站已存在：{{ duplicateApp.name }}（分类：{{ duplicateCategoryName }}），无需重复添加
+                    </span>
+                </p>
 
                 <div class="form-group">
                     <label class="form-label" for="popup-category">
@@ -489,6 +515,25 @@ watch(
     font-size: 12px;
     color: var(--md-sys-color-error);
     line-height: 1.4;
+}
+
+.popup-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-tertiary-container, #4a3200);
+    background: var(--md-sys-color-tertiary-container, rgba(255, 179, 0, 0.16));
+
+    :deep(.icon-svg) {
+        margin-top: 1px;
+        flex-shrink: 0;
+        color: inherit;
+    }
 }
 
 .icon-selector {

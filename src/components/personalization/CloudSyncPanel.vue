@@ -12,6 +12,7 @@ import { useCloudSync } from '@/composables/useCloudSync';
 import { useToast } from '@/composables/useToast';
 import { useConfirm } from '@/composables/useConfirm';
 import type { PromptOptions } from '@/composables/useConfirm';
+import { MIN_PASSPHRASE_LENGTH } from '@/utils/crypto.util';
 import IconSvg from '@/components/icon/IconSvg.vue';
 import BaseInput from '@/components/common/BaseInput.vue';
 import BaseButton from '@/components/common/BaseButton.vue';
@@ -46,11 +47,17 @@ const {
     autoSync,
     isLoading,
     error,
+    crossDeviceEnabled,
+    crossDeviceHasPassphrase,
+    crossDeviceRemoteAvailable,
     login,
     logout,
     sync,
     pullAndApply,
-    setAutoSync
+    setAutoSync,
+    enableCrossDeviceSync,
+    disableCrossDeviceSync,
+    restoreFromCrossDevice
 } = useCloudSync({
     uiAdapter: {
         showToast: (message, type = 'info') => {
@@ -60,6 +67,13 @@ const {
         showPrompt: (message, options) => confirmDialog.prompt(message, options as PromptOptions | undefined)
     }
 });
+
+/** 跨设备同步：是否正在输入密码（勾选开关后展开） */
+const crossDeviceSetup = ref(false);
+/** 跨设备同步：密码输入值 */
+const crossDevicePassphrase = ref('');
+/** 跨设备同步：正在执行启用 / 关闭 / 恢复 */
+const crossDeviceBusy = ref(false);
 
 const tokenInput = ref('');
 
@@ -85,6 +99,12 @@ const selectedProvider = ref<ProviderId>('github');
 const currentProviderOption = computed(() => PROVIDER_OPTIONS.find((option) => option.id === selectedProvider.value) ?? PROVIDER_OPTIONS[0]);
 
 const CLOUD_PATH = 'M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z';
+
+/** 挂锁图标（跨设备加密同步） */
+const LOCK_PATHS = [
+    'M7 11V7a5 5 0 0 1 10 0v4',
+    'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z'
+];
 
 async function handleLogin(): Promise<void> {
     const token = tokenInput.value.trim();
@@ -149,6 +169,92 @@ async function handleAutoSyncChange(event: Event): Promise<void> {
     }
 }
 
+/** 勾选 / 取消「跨设备同步登录状态」 */
+function handleCrossDeviceToggle(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) {
+        crossDeviceSetup.value = true;
+        return;
+    }
+    crossDeviceSetup.value = false;
+    crossDevicePassphrase.value = '';
+    if (crossDeviceEnabled.value) {
+        void handleDisableCrossDevice();
+    }
+}
+
+/** 启用跨设备同步（校验口令后加密推送当前凭据） */
+async function handleEnableCrossDevice(): Promise<void> {
+    const passphrase = crossDevicePassphrase.value;
+    if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
+        toast.show(`同步密码至少 ${MIN_PASSPHRASE_LENGTH} 位`, { type: 'error' });
+        return;
+    }
+
+    crossDeviceBusy.value = true;
+    try {
+        await enableCrossDeviceSync(passphrase);
+        crossDevicePassphrase.value = '';
+        crossDeviceSetup.value = false;
+        toast.show('已开启跨设备同步，其他设备输入同一密码即可免 Token 登录', { type: 'success' });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        emit('error', message);
+        toast.show(message, { type: 'error' });
+    } finally {
+        crossDeviceBusy.value = false;
+    }
+}
+
+/** 关闭跨设备同步 */
+async function handleDisableCrossDevice(): Promise<void> {
+    const confirmed = await confirmDialog.confirm(
+        '关闭后将从浏览器同步区清除已加密的登录凭据，其他设备需要重新输入 Token。',
+        { title: '关闭跨设备同步', okText: '关闭', isDanger: true }
+    );
+    if (!confirmed) {
+        crossDeviceSetup.value = false;
+        return;
+    }
+
+    crossDeviceBusy.value = true;
+    try {
+        await disableCrossDeviceSync();
+        toast.show('已关闭跨设备同步', { type: 'info' });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        emit('error', message);
+    } finally {
+        crossDeviceBusy.value = false;
+    }
+}
+
+/** 在新设备上凭口令还原登录状态 */
+async function handleRestoreCrossDevice(): Promise<void> {
+    const passphrase = crossDevicePassphrase.value;
+    if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
+        toast.show(`同步密码至少 ${MIN_PASSPHRASE_LENGTH} 位`, { type: 'error' });
+        return;
+    }
+
+    crossDeviceBusy.value = true;
+    try {
+        const success = await restoreFromCrossDevice(passphrase);
+        if (success) {
+            crossDevicePassphrase.value = '';
+            toast.show('已从其他设备恢复登录状态', { type: 'success' });
+        } else {
+            toast.show('同步区没有可用的登录凭据', { type: 'error' });
+        }
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        emit('error', message);
+        toast.show(message, { type: 'error' });
+    } finally {
+        crossDeviceBusy.value = false;
+    }
+}
+
 const statusClass = computed(() => {
     if (isLoading.value) {
         return 'is-loading';
@@ -176,6 +282,37 @@ const statusClass = computed(() => {
             <p class="cloud-sync-panel__hint">
                 使用 GitHub / Gitee 代码片段（Gist）备份和同步你的站点数据
             </p>
+
+            <div v-if="crossDeviceRemoteAvailable" class="cloud-sync-cross is-restore">
+                <div class="cloud-sync-cross__head">
+                    <IconSvg :paths="LOCK_PATHS" :size="16" color="var(--md-sys-color-primary)" />
+                    <span>检测到其他设备的登录状态</span>
+                </div>
+                <p class="cloud-sync-panel__hint">
+                    输入在原设备设置的同步密码，即可免 Token 直接恢复登录。
+                </p>
+                <BaseInput
+                    v-model="crossDevicePassphrase"
+                    type="password"
+                    label="同步密码"
+                    :placeholder="`至少 ${MIN_PASSPHRASE_LENGTH} 位`"
+                    autocomplete="off"
+                    :disabled="crossDeviceBusy"
+                    @enter="handleRestoreCrossDevice"
+                />
+                <BaseButton
+                    variant="outlined"
+                    size="small"
+                    block
+                    :loading="crossDeviceBusy"
+                    @click="handleRestoreCrossDevice"
+                >
+                    <template #icon>
+                        <IconSvg :paths="LOCK_PATHS" :size="16" />
+                    </template>
+                    恢复登录状态
+                </BaseButton>
+            </div>
 
             <div class="cloud-sync-provider" role="tablist" aria-label="同步平台">
                 <button
@@ -244,6 +381,52 @@ const statusClass = computed(() => {
                 >
                 <span>自动同步</span>
             </label>
+
+            <div class="cloud-sync-cross">
+                <label class="cloud-sync-toggle">
+                    <input
+                        type="checkbox"
+                        :checked="crossDeviceEnabled || crossDeviceSetup"
+                        :disabled="isLoading || crossDeviceBusy"
+                        @change="handleCrossDeviceToggle"
+                    >
+                    <span>跨设备同步登录状态（加密）</span>
+                </label>
+
+                <p
+                    v-if="crossDeviceEnabled && !crossDeviceSetup && crossDeviceHasPassphrase"
+                    class="cloud-sync-panel__hint"
+                >
+                    已开启。其他设备登录同一浏览器账号后输入同步密码即可免 Token 登录；同步区只保存 AES-GCM 密文。
+                </p>
+
+                <template v-if="crossDeviceSetup || (crossDeviceEnabled && !crossDeviceHasPassphrase)">
+                    <p class="cloud-sync-panel__hint">
+                        同步密码只保存在本机、不会上传。换设备时输入同一密码即可还原登录状态。
+                    </p>
+                    <BaseInput
+                        v-model="crossDevicePassphrase"
+                        type="password"
+                        label="同步密码"
+                        :placeholder="`至少 ${MIN_PASSPHRASE_LENGTH} 位`"
+                        autocomplete="off"
+                        :disabled="crossDeviceBusy"
+                        @enter="handleEnableCrossDevice"
+                    />
+                    <BaseButton
+                        variant="primary"
+                        size="small"
+                        block
+                        :loading="crossDeviceBusy"
+                        @click="handleEnableCrossDevice"
+                    >
+                        <template #icon>
+                            <IconSvg :paths="LOCK_PATHS" :size="16" />
+                        </template>
+                        {{ crossDeviceEnabled ? '更新同步密码' : '开启并加密同步' }}
+                    </BaseButton>
+                </template>
+            </div>
 
             <div class="cloud-sync-actions">
                 <BaseButton
@@ -397,6 +580,29 @@ const statusClass = computed(() => {
         height: 18px;
         cursor: pointer;
         accent-color: var(--md-sys-color-primary);
+    }
+}
+
+.cloud-sync-cross {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 12px;
+    background: var(--md-sys-color-surface-container-low, transparent);
+
+    &.is-restore {
+        border-color: var(--md-sys-color-primary);
+    }
+
+    &__head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--md-sys-color-on-surface);
     }
 }
 

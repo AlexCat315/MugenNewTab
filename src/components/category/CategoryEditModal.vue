@@ -49,6 +49,13 @@ const nameError = ref('');
 const showPresetIcons = ref(false);
 const activeIconField = ref<'light' | 'dark'>('light');
 
+/** 与当前输入同名的已有分类（编辑时排除自身） */
+const duplicateCategory = computed(() => {
+    const name = form.value.name.trim();
+    if (!name) return undefined;
+    return dataManager.findCategoryByName(name, props.category?.id);
+});
+
 function resetForm(): void {
     form.value = {
         name: props.category?.name ?? '',
@@ -83,6 +90,10 @@ function validate(): boolean {
     nameError.value = '';
     if (!form.value.name.trim()) {
         nameError.value = '请输入分类名称';
+        return false;
+    }
+    if (duplicateCategory.value) {
+        nameError.value = `分类「${duplicateCategory.value.name}」已存在，请换一个名称`;
         return false;
     }
     return true;
@@ -175,6 +186,10 @@ const activePresetIcon = computed(() =>
                 :error="nameError"
                 autocomplete="off"
             />
+
+            <p v-if="duplicateCategory && !nameError" class="mnt-category-form__warning">
+                已有同名分类「{{ duplicateCategory.name }}」，请换一个名称
+            </p>
 
             <div class="mnt-category-form__group">
                 <div class="mnt-category-form__group-header">
@@ -332,6 +347,16 @@ const activePresetIcon = computed(() =>
         display: flex;
         flex-direction: column;
         gap: 12px;
+    }
+
+    &__warning {
+        margin: -8px 0 0;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--md-sys-color-on-tertiary-container, #4a3200);
+        background: var(--md-sys-color-tertiary-container, rgba(255, 179, 0, 0.16));
     }
 
     &__group-header {

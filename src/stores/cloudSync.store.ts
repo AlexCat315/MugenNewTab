@@ -8,6 +8,13 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { storageManager } from '@/services/storage.service';
 import { CloudSyncService, createCloudSyncService } from '@/services/cloudSync.service';
+import {
+    enableCrossDevice,
+    disableCrossDevice,
+    restoreCrossDeviceAuth,
+    getCrossDeviceState,
+    hasRemoteCrossDeviceAuth
+} from '@/services/crossDeviceSync.service';
 import { useAppDataStore } from './appData.store';
 import type {
     ICloudSyncUIAdapter,
@@ -47,6 +54,12 @@ export const useCloudSyncStore = defineStore('cloudSync', () => {
     const isLoading = ref(false);
     /** 最近一次错误信息 */
     const error = ref<string | null>(null);
+    /** 是否启用跨设备同步登录状态 */
+    const crossDeviceEnabled = ref(false);
+    /** 本机是否已保存同步密码 */
+    const crossDeviceHasPassphrase = ref(false);
+    /** 同步区是否已有其他设备推送的加密凭据 */
+    const crossDeviceRemoteAvailable = ref(false);
 
     /** CloudSyncService 实例，懒创建 */
     let cloudSyncService: CloudSyncService | null = null;
@@ -78,6 +91,72 @@ export const useCloudSyncStore = defineStore('cloudSync', () => {
         provider.value = settings.provider;
     }
 
+    /** 刷新跨设备同步相关状态 */
+    async function refreshCrossDevice(): Promise<void> {
+        try {
+            const [state, remoteAvailable] = await Promise.all([
+                getCrossDeviceState(),
+                hasRemoteCrossDeviceAuth()
+            ]);
+            crossDeviceEnabled.value = state.enabled;
+            crossDeviceHasPassphrase.value = state.hasPassphrase;
+            crossDeviceRemoteAvailable.value = remoteAvailable;
+        } catch (e) {
+            console.warn('[CloudSync] 读取跨设备同步状态失败:', e);
+        }
+    }
+
+    /**
+     * 启用跨设备同步登录状态（加密）
+     * 已登录时立即把当前凭据加密后推送到同步区。
+     */
+    async function enableCrossDeviceSync(passphrase: string): Promise<void> {
+        error.value = null;
+        try {
+            const auth = token.value
+                ? { token: token.value, provider: provider.value as string }
+                : null;
+            await enableCrossDevice(passphrase, auth);
+            await refreshCrossDevice();
+        } catch (e) {
+            error.value = e instanceof Error ? e.message : String(e);
+            throw e;
+        }
+    }
+
+    /** 关闭跨设备同步：清除本机口令与同步区密文 */
+    async function disableCrossDeviceSync(): Promise<void> {
+        error.value = null;
+        try {
+            await disableCrossDevice();
+            await refreshCrossDevice();
+        } catch (e) {
+            error.value = e instanceof Error ? e.message : String(e);
+            throw e;
+        }
+    }
+
+    /**
+     * 在新设备上凭口令还原登录状态
+     *
+     * @returns 是否还原成功
+     */
+    async function restoreFromCrossDevice(passphrase: string): Promise<boolean> {
+        error.value = null;
+        try {
+            const auth = await restoreCrossDeviceAuth(passphrase);
+            if (!auth) {
+                return false;
+            }
+            const success = await login(auth.token, auth.provider as CloudSyncProviderId);
+            await refreshCrossDevice();
+            return success;
+        } catch (e) {
+            error.value = e instanceof Error ? e.message : String(e);
+            throw e;
+        }
+    }
+
     /**
      * 设置 UI 适配器
      * 应用层可通过此方法注入真实的 Toast / Confirm / Prompt 实现。
@@ -96,6 +175,7 @@ export const useCloudSyncStore = defineStore('cloudSync', () => {
         try {
             await getService().init();
             syncStateFromService();
+            await refreshCrossDevice();
         } catch (e) {
             error.value = e instanceof Error ? e.message : String(e);
             throw e;
@@ -114,6 +194,7 @@ export const useCloudSyncStore = defineStore('cloudSync', () => {
         try {
             const success = await getService().saveToken(inputToken, providerId);
             syncStateFromService();
+            await refreshCrossDevice();
             return success;
         } catch (e) {
             error.value = e instanceof Error ? e.message : String(e);
@@ -132,6 +213,7 @@ export const useCloudSyncStore = defineStore('cloudSync', () => {
         try {
             await getService().logout();
             syncStateFromService();
+            await refreshCrossDevice();
         } catch (e) {
             error.value = e instanceof Error ? e.message : String(e);
             throw e;
@@ -250,6 +332,9 @@ export const useCloudSyncStore = defineStore('cloudSync', () => {
         provider,
         isLoading,
         error,
+        crossDeviceEnabled,
+        crossDeviceHasPassphrase,
+        crossDeviceRemoteAvailable,
         // Getters
         isLoggedIn,
         isSyncing,
@@ -264,6 +349,10 @@ export const useCloudSyncStore = defineStore('cloudSync', () => {
         pullAndApply,
         showLoginDialog,
         scheduleAutoSync,
-        setUIAdapter
+        setUIAdapter,
+        refreshCrossDevice,
+        enableCrossDeviceSync,
+        disableCrossDeviceSync,
+        restoreFromCrossDevice
     };
 });

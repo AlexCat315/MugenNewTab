@@ -22,6 +22,7 @@ export const useLayoutStore = defineStore('layout', () => {
     const showAllCategory = ref(true);
     const allViewFlat = ref(false);
     const showIconBackground = ref(true);
+    const minimalMode = ref(false);
     const initialized = ref(false);
     const isMobile = ref(false);
 
@@ -49,6 +50,7 @@ export const useLayoutStore = defineStore('layout', () => {
             showAllCategory: showAllCategory.value,
             allViewFlat: allViewFlat.value,
             showIconBackground: showIconBackground.value,
+            minimalMode: minimalMode.value,
         };
         await storageManager.set(STORAGE_KEYS.LAYOUT_SETTINGS, settings);
     }
@@ -79,6 +81,9 @@ export const useLayoutStore = defineStore('layout', () => {
                 }
                 if (typeof saved.showIconBackground === 'boolean') {
                     showIconBackground.value = saved.showIconBackground;
+                }
+                if (typeof saved.minimalMode === 'boolean') {
+                    minimalMode.value = saved.minimalMode;
                 }
             }
             initialized.value = true;
@@ -118,6 +123,11 @@ export const useLayoutStore = defineStore('layout', () => {
         await persist();
     }
 
+    async function setMinimalMode(value: boolean): Promise<void> {
+        minimalMode.value = value;
+        await persist();
+    }
+
     return {
         columns,
         paginate,
@@ -125,6 +135,7 @@ export const useLayoutStore = defineStore('layout', () => {
         showAllCategory,
         allViewFlat,
         showIconBackground,
+        minimalMode,
         isMobile,
         initialized,
         init,
@@ -134,5 +145,6 @@ export const useLayoutStore = defineStore('layout', () => {
         setShowAllCategory,
         setAllViewFlat,
         setShowIconBackground,
+        setMinimalMode,
     };
 });

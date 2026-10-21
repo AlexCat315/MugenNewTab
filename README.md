@@ -39,13 +39,13 @@ npm run dev
 
 ```bash
 npm run build:chromium
-# 此时 dist/ 目录即为 Chromium 扩展加载目录
+# 此时 dist-chrome/ 目录即为 Chromium 扩展加载目录
 ```
 
 1. 打开 Chrome 扩展管理页：`chrome://extensions/`
 2. 开启右上角「开发者模式」
 3. 点击「加载已解压的扩展程序」
-4. 选择 `./build-chromium.sh` 生成的 `build-chromium/` 目录（或 `npm run build:chromium` 生成的 `dist/`）
+4. 选择 `./build-chromium.sh` 生成的 `build-chromium/` 目录（或 `npm run build:chromium` 生成的 `dist-chrome/`）
 5. 打开新标签页即可看到 MugenNewTab
 
 扩展版使用 `chrome.storage.local` 存储数据。
@@ -70,9 +70,10 @@ MugenNewTab/
 ├── index.html                  # 主入口（网页版 & 扩展新标签页）
 ├── view/
 │   └── popup.html              # 扩展弹出窗口入口
-├── manifest.json               # Chrome / Chromium / Edge Manifest V3
+├── manifest.json               # Chrome / Chromium Manifest V3（新 Logo 图标）
+├── manifest.edge.json          # Microsoft Edge Manifest V3（沿用旧 Logo 图标）
 ├── manifest.firefox.json       # Firefox Manifest V3
-├── public/                     # 静态资源（构建时原样复制到 dist）
+├── public/                     # 静态资源（构建时原样复制到产物目录）
 │   ├── config/                 # JSON 配置：主题、搜索引擎、默认数据
 │   └── image/                  # 图标与 Logo
 ├── src/                        # Vue3 + TypeScript 源码
@@ -92,7 +93,7 @@ MugenNewTab/
 ├── build-firefox.sh            # Firefox 扩展构建脚本
 ├── sign-firefox.sh             # 扩展打包/签名脚本（同时生成 Chromium .zip 与 Firefox .xpi/.zip）
 ├── scripts/
-│   └── postbuild.js            # 构建后根据目标生成 dist/manifest.json
+│   └── postbuild.js            # 构建后根据目标生成 <产物目录>/manifest.json
 ├── package.json
 ├── vite.config.ts
 ├── vitest.config.ts
@@ -145,10 +146,13 @@ npx vue-tsc --noEmit
 
 ### 构建产物结构
 
-执行 `npm run build:firefox` 或 `npm run build:chromium` 后，`dist/` 目录结构如下：
+执行 `npm run build:chromium` / `npm run build:edge` / `npm run build:firefox` 后，产物分别位于
+`dist-chrome/`、`dist-edge/`、`dist-firefox/`，目录结构如下：
 
 ```
-dist/
+dist-chrome/   # Chrome / Chromium
+dist-edge/     # Microsoft Edge（图标沿用旧 Logo）
+dist-firefox/  # Firefox
 ├── index.html
 ├── view/
 │   └── popup.html

@@ -34,6 +34,9 @@ export interface UseCloudSyncReturn {
     isLoading: ComputedRef<boolean>;
     error: ComputedRef<string | null>;
     isLoggedIn: ComputedRef<boolean>;
+    crossDeviceEnabled: ComputedRef<boolean>;
+    crossDeviceHasPassphrase: ComputedRef<boolean>;
+    crossDeviceRemoteAvailable: ComputedRef<boolean>;
     statusText: ComputedRef<string>;
     formattedLastSyncTime: ComputedRef<string>;
     init: () => Promise<void>;
@@ -47,6 +50,10 @@ export interface UseCloudSyncReturn {
     showLoginDialog: () => Promise<void>;
     scheduleAutoSync: () => void;
     cancelPending: () => void;
+    refreshCrossDevice: () => Promise<void>;
+    enableCrossDeviceSync: (passphrase: string) => Promise<void>;
+    disableCrossDeviceSync: () => Promise<void>;
+    restoreFromCrossDevice: (passphrase: string) => Promise<boolean>;
 }
 
 const DEFAULT_AUTO_SYNC_DEBOUNCE_MS = 3000;
@@ -202,6 +209,22 @@ export function useCloudSync(options: UseCloudSyncOptions = {}): UseCloudSyncRet
         return createAbortable(() => store.showLoginDialog());
     }
 
+    async function refreshCrossDevice(): Promise<void> {
+        return createAbortable(() => store.refreshCrossDevice());
+    }
+
+    async function enableCrossDeviceSync(passphrase: string): Promise<void> {
+        return createAbortable(() => store.enableCrossDeviceSync(passphrase));
+    }
+
+    async function disableCrossDeviceSync(): Promise<void> {
+        return createAbortable(() => store.disableCrossDeviceSync());
+    }
+
+    async function restoreFromCrossDevice(passphrase: string): Promise<boolean> {
+        return createAbortable(() => store.restoreFromCrossDevice(passphrase));
+    }
+
     /**
      * 触发自动同步（防抖）
      * 仅在已登录且开启自动同步时生效；执行双向合并同步，成功静默、失败 Toast 提示。
@@ -255,6 +278,9 @@ export function useCloudSync(options: UseCloudSyncOptions = {}): UseCloudSyncRet
         isLoading: computed(() => store.isLoading),
         error: computed(() => store.error),
         isLoggedIn,
+        crossDeviceEnabled: computed(() => store.crossDeviceEnabled),
+        crossDeviceHasPassphrase: computed(() => store.crossDeviceHasPassphrase),
+        crossDeviceRemoteAvailable: computed(() => store.crossDeviceRemoteAvailable),
         statusText,
         formattedLastSyncTime,
         init,
@@ -267,6 +293,10 @@ export function useCloudSync(options: UseCloudSyncOptions = {}): UseCloudSyncRet
         pullAndApply,
         showLoginDialog,
         scheduleAutoSync,
-        cancelPending
+        cancelPending,
+        refreshCrossDevice,
+        enableCrossDeviceSync,
+        disableCrossDeviceSync,
+        restoreFromCrossDevice
     };
 }

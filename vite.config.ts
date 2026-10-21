@@ -23,7 +23,9 @@ export default defineConfig({
         }
     },
     build: {
-        outDir: 'dist',
+        // 输出目录按目标区分：dist-chrome / dist-edge / dist-firefox
+        // 未显式指定时默认产出 Chrome 包
+        outDir: process.env.BUILD_OUT_DIR || 'dist-chrome',
         rollupOptions: {
             input: {
                 main: path.resolve(__dirname, 'index.html'),

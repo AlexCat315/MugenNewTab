@@ -23,17 +23,19 @@ withDefaults(defineProps<MainContentProps>(), {
 
 <template>
     <main class="main-content" :class="{ collapsed }">
-        <header v-if="showHeader" class="content-header">
-            <h2 class="content-title">
-                <slot name="header-title">{{ title }}</slot>
-            </h2>
-            <div class="header-extra">
-                <slot name="header-extra" />
-            </div>
-        </header>
+        <div class="content-wrapper">
+            <header v-if="showHeader" class="content-header">
+                <h2 class="content-title">
+                    <slot name="header-title">{{ title }}</slot>
+                </h2>
+                <div class="header-extra">
+                    <slot name="header-extra" />
+                </div>
+            </header>
 
-        <div class="content-body">
-            <slot />
+            <div class="content-body">
+                <slot />
+            </div>
         </div>
     </main>
 </template>
@@ -54,10 +56,15 @@ withDefaults(defineProps<MainContentProps>(), {
     }
 }
 
+.content-wrapper {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
 .content-header {
     margin-bottom: 24px;
     padding-bottom: 12px;
-    border-bottom: 1px solid var(--md-sys-color-primary-container);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
     position: relative;
     display: flex;
     align-items: center;

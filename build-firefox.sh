@@ -20,7 +20,7 @@ npm run build:firefox
 echo ""
 echo "📂 复制构建产物到 build-firefox/..."
 mkdir -p build-firefox
-cp -r dist/* build-firefox/
+cp -r dist-firefox/* build-firefox/
 
 echo ""
 echo "✅ 构建完成"

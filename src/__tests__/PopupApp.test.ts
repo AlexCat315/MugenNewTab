@@ -30,6 +30,13 @@ function createMockDataManager() {
         init: vi.fn(),
         addApp: vi.fn(async (app) => ({ ...app, id: 'app_new' })),
         addCategory: vi.fn(async (input) => ({ ...input, id: 'cat_new', icon: './image/icons/folder.svg' })),
+        // 判重相关查询：默认查不到重复，具体用例可覆盖返回值
+        findAppByUrl: vi.fn(
+            (_url?: string, _excludeId?: string): { id: string; name: string; url: string; category: string } | undefined =>
+                undefined
+        ),
+        findCategoryByName: vi.fn((_name?: string, _excludeId?: string): { id: string; name: string } | undefined => undefined),
+        getCategoryById: vi.fn((id: string) => mockCategories.find((c) => c.id === id)),
     };
 }
 
@@ -165,8 +172,37 @@ describe('PopupApp.vue', () => {
         expect(toast.success).toHaveBeenCalledWith('网站已添加');
     });
 
-    it('新建分类时先创建分类再保存网站', async () => {
+    it('当前标签页已在导航中时提示重复并阻止添加', async () => {
+        const dm = createMockDataManager();
+        dm.findAppByUrl.mockReturnValue({
+            id: 'app_1',
+            name: 'GitHub',
+            url: 'https://github.com',
+            category: 'dev',
+        });
+        vi.mocked(useDataManager).mockReturnValue(dm as unknown as ReturnType<typeof useDataManager>);
+
         mountPopup();
+        await flushPromises();
+
+        // 自动填充的当前标签页就是 GitHub，进来就应提示重复
+        expect(document.body.textContent).toContain('该网站已存在');
+
+        const categorySelect = document.querySelector('#popup-category') as HTMLSelectElement;
+        categorySelect.value = 'dev';
+        categorySelect.dispatchEvent(new Event('change'));
+        await flushPromises();
+
+        const saveBtn = Array.from(document.querySelectorAll('.mnt-base-button')).find(
+            (btn) => btn.textContent?.includes('保存网站')
+        ) as HTMLButtonElement;
+        saveBtn.click();
+        await flushPromises();
+
+        expect(dm.addApp).not.toHaveBeenCalled();
+    });
+
+    it('新建分类时先创建分类再保存网站', async () => {        mountPopup();
         await flushPromises();
 
         const nameInput = document.querySelector('input[placeholder="例如：GitHub"]') as HTMLInputElement;

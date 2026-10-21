@@ -21,6 +21,7 @@ import { useDataManager } from '@/composables/useDataManager';
 import { useToast } from '@/composables/useToast';
 import { storageManager } from '@/services/storage.service';
 import { STORAGE_KEYS } from '@/types/storage';
+import { normalizeUrl } from '@/utils/url.util';
 import type { AppItem, AppInput } from '@/types/app';
 
 /** 新建分类选项的特殊值 */
@@ -49,7 +50,16 @@ const emit = defineEmits<{
     (e: 'saved', app: AppItem): void;
 }>();
 
-const { userCategories, uiItems, addCategory, addApp, updateApp } = useDataManager();
+const {
+    userCategories,
+    uiItems,
+    addCategory,
+    addApp,
+    updateApp,
+    findAppByUrl,
+    findCategoryByName,
+    getCategoryById
+} = useDataManager();
 const { success, error } = useToast();
 
 interface FormState {
@@ -84,13 +94,22 @@ const effectiveIcon = computed(() => form.value.icon?.trim() || DEFAULT_ICON);
 const categoryOptions = computed(() => userCategories.value);
 const iconItems = computed(() => uiItems.value);
 
-/** 补全 URL 协议 */
-function normalizeUrl(url: string): string {
-    const trimmed = url.trim();
-    if (!trimmed) return '';
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    return `https://${trimmed}`;
-}
+/**
+ * 与当前输入 URL 指向同一站点的已有站点
+ * 编辑模式排除自身，避免「改个名字也被判重」
+ */
+const duplicateApp = computed(() => {
+    const url = form.value.url.trim();
+    if (!url) return undefined;
+    return findAppByUrl(url, props.app?.id);
+});
+
+/** 重复站点所在分类名 */
+const duplicateCategoryName = computed(() => {
+    const duplicate = duplicateApp.value;
+    if (!duplicate) return '';
+    return getCategoryById(duplicate.category)?.name ?? '未分类';
+});
 
 /** 根据 URL 生成 favicon 服务地址，larger 为 true 时请求高清图 */
 function buildFaviconUrl(url: string, larger = false): string | null {
@@ -187,6 +206,9 @@ function validate(): boolean {
         } catch {
             errors.value.url = '请输入有效的网址';
         }
+        if (!errors.value.url && duplicateApp.value) {
+            errors.value.url = `该网站已存在：${duplicateApp.value.name}（分类：${duplicateCategoryName.value}）`;
+        }
     }
 
     if (!form.value.category) {
@@ -213,8 +235,14 @@ async function handleSubmit(): Promise<void> {
         let categoryId = form.value.category;
 
         if (categoryId === NEW_CATEGORY_VALUE) {
-            const newCategory = await addCategory({ name: newCategoryName.value.trim() });
-            categoryId = newCategory.id;
+            // 同名分类已存在时直接复用，避免「新建分类」撞名报错
+            const existing = findCategoryByName(newCategoryName.value);
+            if (existing) {
+                categoryId = existing.id;
+            } else {
+                const newCategory = await addCategory({ name: newCategoryName.value.trim() });
+                categoryId = newCategory.id;
+            }
         }
 
         const payload: AppInput = {
@@ -319,6 +347,12 @@ watch(
                         :error="errors.url"
                         @blur="handleUrlBlur"
                     />
+                    <p v-if="duplicateApp && !errors.url" class="form-warning">
+                        <IconSvg name="warning" :size="14" />
+                        <span>
+                            该网站已存在：{{ duplicateApp.name }}（分类：{{ duplicateCategoryName }}），同一站点不能重复添加
+                        </span>
+                    </p>
                 </div>
 
                 <div class="form-group">
@@ -554,6 +588,25 @@ watch(
     font-size: 12px;
     color: var(--md-sys-color-error);
     line-height: 1.4;
+}
+
+.form-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-tertiary-container, #4a3200);
+    background: var(--md-sys-color-tertiary-container, rgba(255, 179, 0, 0.16));
+
+    :deep(.icon-svg) {
+        margin-top: 1px;
+        flex-shrink: 0;
+        color: inherit;
+    }
 }
 
 .icon-card {

@@ -7,7 +7,7 @@ import { useDataManager } from '@/composables/useDataManager';
 import { useToast } from '@/composables/useToast';
 import { storageManager } from '@/services/storage.service';
 import { STORAGE_KEYS } from '@/types/storage';
-import type { AppItem } from '@/types/app';
+import type { AppItem, Category } from '@/types/app';
 
 vi.mock('@/composables/useDataManager');
 vi.mock('@/composables/useToast');
@@ -33,6 +33,10 @@ function createMockDataManager() {
         })),
         addApp: vi.fn(async (app: Omit<AppItem, 'id'>) => ({ ...app, id: 'app_new' })),
         updateApp: vi.fn(async (id: string, updates: Partial<AppItem>) => ({ ...updates, id } as AppItem)),
+        // 判重相关查询：默认查不到重复，具体用例可覆盖返回值
+        findAppByUrl: vi.fn((_url?: string, _excludeId?: string): AppItem | undefined => undefined),
+        findCategoryByName: vi.fn((_name?: string, _excludeId?: string): Category | undefined => undefined),
+        getCategoryById: vi.fn((id: string) => mockCategories.find((c) => c.id === id)),
     };
 }
 
@@ -182,8 +186,76 @@ describe('AppEditModal', () => {
         expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false]);
     });
 
-    it('选择新建分类时显示新分类输入框并创建分类', async () => {
-        const wrapper = mountModal();
+    it('输入已存在的站点地址时提示重复并阻止提交', async () => {
+        const dm = createMockDataManager();
+        dm.findAppByUrl.mockReturnValue({
+            id: 'app_1',
+            name: 'Bilibili',
+            url: 'https://www.bilibili.com',
+            category: 'media',
+        } as AppItem);
+        vi.mocked(useDataManager).mockReturnValue(dm as unknown as ReturnType<typeof useDataManager>);
+
+        mountModal();
+        await wait();
+
+        const nameInput = document.querySelector('input[placeholder="例如：GitHub"]') as HTMLInputElement;
+        const urlInput = document.querySelector('input[type="url"]') as HTMLInputElement;
+        const categorySelect = document.querySelector('#app-edit-category') as HTMLSelectElement;
+
+        nameInput.value = 'B站';
+        nameInput.dispatchEvent(new Event('input'));
+        urlInput.value = 'bilibili.com';
+        urlInput.dispatchEvent(new Event('input'));
+        categorySelect.value = 'dev';
+        categorySelect.dispatchEvent(new Event('change'));
+        await flushPromises();
+
+        // 输入过程中就给出重复提示
+        expect(document.querySelector('.form-warning')?.textContent).toContain('该网站已存在');
+
+        const saveBtn = document.querySelector('.mnt-base-button--primary') as HTMLButtonElement;
+        saveBtn.click();
+        await flushPromises();
+
+        expect(dm.addApp).not.toHaveBeenCalled();
+        expect(document.querySelector('.mnt-base-input__error')?.textContent).toContain('该网站已存在');
+    });
+
+    it('新建分类时若同名分类已存在则复用而不报错', async () => {
+        const dm = createMockDataManager();
+        dm.findCategoryByName.mockReturnValue({ id: 'dev', name: '开发工具' });
+        vi.mocked(useDataManager).mockReturnValue(dm as unknown as ReturnType<typeof useDataManager>);
+
+        mountModal();
+        await wait();
+
+        const nameInput = document.querySelector('input[placeholder="例如：GitHub"]') as HTMLInputElement;
+        const urlInput = document.querySelector('input[type="url"]') as HTMLInputElement;
+        const categorySelect = document.querySelector('#app-edit-category') as HTMLSelectElement;
+
+        nameInput.value = 'GitHub';
+        nameInput.dispatchEvent(new Event('input'));
+        urlInput.value = 'github.com';
+        urlInput.dispatchEvent(new Event('input'));
+        categorySelect.value = '__new__';
+        categorySelect.dispatchEvent(new Event('change'));
+        await flushPromises();
+
+        const newCategoryInput = document.querySelector('input[placeholder="例如：学习资源"]') as HTMLInputElement;
+        newCategoryInput.value = '开发工具';
+        newCategoryInput.dispatchEvent(new Event('input'));
+        await flushPromises();
+
+        const saveBtn = document.querySelector('.mnt-base-button--primary') as HTMLButtonElement;
+        saveBtn.click();
+        await flushPromises();
+
+        expect(dm.addCategory).not.toHaveBeenCalled();
+        expect(dm.addApp).toHaveBeenCalledWith(expect.objectContaining({ category: 'dev' }));
+    });
+
+    it('选择新建分类时显示新分类输入框并创建分类', async () => {        const wrapper = mountModal();
         await wait();
 
         const nameInput = document.querySelector('input[placeholder="例如：GitHub"]') as HTMLInputElement;
