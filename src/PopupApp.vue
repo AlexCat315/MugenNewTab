@@ -9,13 +9,16 @@ import { useDataManager } from '@/composables/useDataManager';
 import { useCurrentTab } from '@/composables/useCurrentTab';
 import { useToast } from '@/composables/useToast';
 import { browserApi } from '@/services/browserApi.service';
+import { getSystemIconUrl } from '@/utils/image.util';
 
 import BaseInput from '@/components/common/BaseInput.vue';
 import BaseButton from '@/components/common/BaseButton.vue';
+import ToastContainer from '@/components/common/ToastContainer.vue';
 import IconSvg from '@/components/icon/IconSvg.vue';
 
 const NEW_CATEGORY_VALUE = '__new__';
-const DEFAULT_ICON = './image/icons/picture.svg';
+// 须用绝对路径：popup 页面位于 view/ 子目录，相对路径会解析为 view/image/... 导致 404
+const DEFAULT_ICON = getSystemIconUrl('picture');
 const HOME_PAGE_URL = 'https://github.com/MugenNewTab/MugenNewTab';
 
 const dataManager = useDataManager({ autoInit: true });
@@ -168,10 +171,10 @@ async function handleSubmit(): Promise<void> {
         });
 
         toast.success('网站已添加');
-        // 延迟关闭 popup
+        // 延迟关闭 popup，给用户留出看到成功提示的时间
         setTimeout(() => {
             window.close();
-        }, 600);
+        }, 1500);
 
         // 向父页面发送消息，通知添加成功
         if (browserApi.isExtension) {
@@ -355,6 +358,8 @@ watch(
                 保存网站
             </BaseButton>
         </footer>
+
+        <ToastContainer position="top-right" />
     </div>
 </template>
 

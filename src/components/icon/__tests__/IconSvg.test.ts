@@ -72,4 +72,30 @@ describe('IconSvg', () => {
         expect(img.attributes('src')).toBe('/image/icons/home.svg');
         expect(wrapper.emitted('error')).toHaveLength(1);
     });
+
+    it('回退图也加载失败时不再重复赋值 img.src（无无限 error 循环）', async () => {
+        const srcSetter = vi.spyOn(HTMLImageElement.prototype, 'src', 'set');
+        const wrapper = mount(IconSvg, {
+            props: { src: 'invalid.png', fallback: './missing/fallback.svg' },
+        });
+        const img = wrapper.find('img');
+        await img.trigger('error');
+        const callsAfterFirstError = srcSetter.mock.calls.length;
+        // 回退图再次失败：不应再次重写 src，否则会形成 error → 赋值 → error 死循环
+        await img.trigger('error');
+        await img.trigger('error');
+        expect(srcSetter.mock.calls.length).toBe(callsAfterFirstError);
+        expect(img.attributes('src')).toBe('./missing/fallback.svg');
+    });
+
+    it('源变化后重置错误状态，新地址可正常显示而非停留在回退图', async () => {
+        const wrapper = mount(IconSvg, {
+            props: { src: 'invalid.png', fallback: 'home' },
+        });
+        const img = wrapper.find('img');
+        await img.trigger('error');
+        expect(img.attributes('src')).toBe('/image/icons/home.svg');
+        await wrapper.setProps({ src: 'https://example.com/ok.png' });
+        expect(img.attributes('src')).toBe('https://example.com/ok.png');
+    });
 });

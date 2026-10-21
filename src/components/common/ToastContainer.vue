@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useToast, type ToastItem, type ToastType } from '@/composables/useToast';
-import IconSvg from '@/components/icon/IconSvg.vue';
 
 export type ToastPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
 
@@ -62,7 +61,7 @@ function handleClose(item: ToastItem): void {
                 role="status"
             >
                 <span class="mnt-toast__icon" aria-hidden="true">
-                    <IconSvg :path="getIconPath(item.type)" :size="20" />
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path :d="getIconPath(item.type)" /></svg>
                 </span>
                 <span class="mnt-toast__message" v-html="item.message" />
                 <button
@@ -72,7 +71,7 @@ function handleClose(item: ToastItem): void {
                     aria-label="关闭通知"
                     @click="handleClose(item)"
                 >
-                    <IconSvg name="close" :size="16" />
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
                 </button>
             </div>
         </TransitionGroup>
@@ -118,19 +117,27 @@ function handleClose(item: ToastItem): void {
 }
 
 .mnt-toast {
+    // 类型强调色：success / error / info 跟随主题变量，warning 使用固定琥珀色
+    --toast-accent: var(--md-sys-color-primary);
+
     pointer-events: auto;
+    position: relative;
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 12px 16px;
-    border-radius: 12px;
+    border-radius: 14px;
     font-size: 13px;
     font-weight: 500;
     line-height: 1.5;
-    background: var(--md-sys-color-inverse-surface);
-    color: var(--md-sys-color-inverse-on-surface);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border: 1px solid var(--md-sys-color-outline-variant);
+    color: var(--md-sys-color-on-surface);
+    // 淡色整条填充：类型强调色低透明度叠加在主题 surface 之上，边框同色稍深
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    border: 1px solid color-mix(in srgb, var(--toast-accent) 40%, transparent);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    background: rgba(var(--md-sys-color-surface-rgb), 0.88);
+    background: color-mix(in srgb, var(--toast-accent) 20%, rgba(var(--md-sys-color-surface-rgb), 0.88));
+    backdrop-filter: blur(12px);
     @include md-transition(all, var(--md-transition-fast));
 
     &__icon {
@@ -140,6 +147,13 @@ function handleClose(item: ToastItem): void {
         flex-shrink: 0;
         width: 20px;
         height: 20px;
+        color: var(--toast-accent);
+
+        svg {
+            width: 20px;
+            height: 20px;
+            display: block;
+        }
     }
 
     &__message {
@@ -153,34 +167,40 @@ function handleClose(item: ToastItem): void {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 20px;
-        height: 20px;
+        width: 24px;
+        height: 24px;
         border-radius: 6px;
-        color: inherit;
+        color: var(--toast-accent);
         opacity: 0.7;
         flex-shrink: 0;
         @include focus-ring;
 
+        svg {
+            width: 16px;
+            height: 16px;
+            display: block;
+        }
+
         &:hover {
             opacity: 1;
-            background: rgba(255, 255, 255, 0.12);
+            background: var(--hover-bg);
         }
     }
 
-    &--success &__icon {
-        color: var(--md-sys-color-success);
+    &--success {
+        --toast-accent: var(--md-sys-color-success);
     }
 
-    &--error &__icon {
-        color: var(--md-sys-color-error);
+    &--error {
+        --toast-accent: var(--md-sys-color-error);
     }
 
-    &--warning &__icon {
-        color: #F59E0B;
+    &--warning {
+        --toast-accent: #F59E0B;
     }
 
-    &--info &__icon {
-        color: var(--md-sys-color-primary);
+    &--info {
+        --toast-accent: var(--md-sys-color-primary);
     }
 }
 
@@ -193,13 +213,13 @@ function handleClose(item: ToastItem): void {
 .mnt-toast-enter-from,
 .mnt-toast-leave-to {
     opacity: 0;
-    transform: translateX(24px);
+    transform: translateY(-6px) scale(0.98);
 }
 
 .mnt-toast-leave-from,
 .mnt-toast-enter-to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateY(0) scale(1);
 }
 
 @include respond-to(mobile) {

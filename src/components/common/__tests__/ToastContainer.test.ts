@@ -57,7 +57,7 @@ describe('ToastContainer', () => {
 
         await nextTick();
         const iconWrapper = document.querySelector('.mnt-toast__icon');
-        expect(iconWrapper?.querySelector('.icon-svg')).not.toBeNull();
+        expect(iconWrapper?.querySelector('svg')).not.toBeNull();
         expect(document.querySelector('.mnt-toast')?.textContent).not.toMatch(/[\u{1F300}-\u{1F9FF}]/u);
     });
 

@@ -51,6 +51,9 @@ function createMockToast() {
     return {
         success: vi.fn(),
         error: vi.fn(),
+        // ToastContainer 渲染依赖的状态与方法
+        toasts: ref([]),
+        dismiss: vi.fn(),
     };
 }
 

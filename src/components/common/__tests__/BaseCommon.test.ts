@@ -65,4 +65,12 @@ describe('BaseSlider', () => {
         await input.setValue('60');
         expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([60]);
     });
+
+    it('拖动结束时触发 change 事件（用于一次性持久化）', async () => {
+        const wrapper = mount(BaseSlider, { props: { modelValue: 30, min: 0, max: 100 } });
+        const input = wrapper.find('input[type="range"]');
+        (input.element as HTMLInputElement).value = '80';
+        await input.trigger('change');
+        expect(wrapper.emitted('change')?.[0]).toEqual([80]);
+    });
 });

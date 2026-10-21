@@ -187,11 +187,16 @@ const isRemoteSource = computed(() => {
 /** 从 IndexedDB 缓存解析出的对象地址（未命中时为 null） */
 const cachedObjectUrl = ref<string | null>(null);
 
+/** 当前源的图片加载失败次数（需在 watch 之前声明：watch immediate 会立即访问） */
+const imageErrorCount = ref(0);
+
 // 远程图标优先尝试命中缓存；缓存不可用时静默回退到网络加载
 watch(
     effectiveSource,
     source => {
         cachedObjectUrl.value = null;
+        // 源变化时重置错误计数，让新地址有机会正常加载（否则会一直停留在回退图）
+        imageErrorCount.value = 0;
         if (!iconCacheService.isCacheableUrl(source)) {
             return;
         }
@@ -237,8 +242,6 @@ const rootStyle = computed(() => {
     return style;
 });
 
-const imageErrorCount = ref(0);
-
 function onImageError(event: Event) {
     const img = event.target as HTMLImageElement | null;
     if (img && cachedObjectUrl.value && img.src === cachedObjectUrl.value) {
@@ -248,8 +251,11 @@ function onImageError(event: Event) {
         void iconCacheService.evict(source);
         return;
     }
+    // 只在首次失败时切换回退图；回退图自身再失败时不再重复赋值 img.src，
+    // 否则相对路径回退会因 img.src（绝对 URL）与 resolvedFallback（原始字符串）永不相等而无限触发 error
+    const alreadyOnFallback = imageErrorCount.value > 0;
     imageErrorCount.value += 1;
-    if (img && img.src !== resolvedFallback.value) {
+    if (!alreadyOnFallback && img) {
         img.src = resolvedFallback.value;
     }
     emit('error', event);

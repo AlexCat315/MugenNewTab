@@ -231,7 +231,7 @@ function formatPx(value: number): string {
                 :step="0.01"
                 :format-value="formatPercent"
                 :disabled="loading"
-                @update:model-value="handleOpacityChange"
+                @change="handleOpacityChange"
             />
 
             <BaseSlider
@@ -242,7 +242,7 @@ function formatPx(value: number): string {
                 :step="0.5"
                 :format-value="formatPx"
                 :disabled="loading"
-                @update:model-value="handleBlurChange"
+                @change="handleBlurChange"
             />
 
             <BaseSlider
@@ -253,7 +253,7 @@ function formatPx(value: number): string {
                 :step="0.01"
                 :format-value="formatPercent"
                 :disabled="loading"
-                @update:model-value="handleOverlayChange"
+                @change="handleOverlayChange"
             />
         </div>
 

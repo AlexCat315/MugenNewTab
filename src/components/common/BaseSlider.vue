@@ -29,6 +29,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
     (e: 'update:modelValue', value: number): void;
+    /** 拖动结束（或键盘调节完成）时触发，用于一次性持久化，避免拖动中连续写存储 */
+    (e: 'change', value: number): void;
 }>();
 
 const displayValue = computed(() => {
@@ -47,6 +49,11 @@ const progressPercent = computed(() => {
 function handleInput(event: Event): void {
     const target = event.target as HTMLInputElement;
     emit('update:modelValue', Number(target.value));
+}
+
+function handleChange(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    emit('change', Number(target.value));
 }
 
 function clampValue(value: number): number {
@@ -81,6 +88,7 @@ function handleKeydown(event: KeyboardEvent): void {
                 :value="modelValue"
                 :disabled="disabled"
                 @input="handleInput"
+                @change="handleChange"
                 @keydown="handleKeydown"
             />
             <div class="mnt-base-slider__progress" :style="{ width: `${progressPercent}%` }" />
