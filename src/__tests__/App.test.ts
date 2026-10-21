@@ -250,30 +250,42 @@ describe('App.vue', () => {
         const brand = header.find('.brand');
         expect(brand.exists()).toBe(true);
 
-        // 双击 Logo：隐藏卡片混入显示，标题保持不变，状态持久化
+        // 双击 Logo：隐藏卡片混入显示，标题保持不变
         await brand.trigger('dblclick');
         await flushPromises();
 
         expect(wrapper.find('.content-title').text()).toBe('全部应用');
         expect(wrapper.text()).toContain('Secret');
-        expect(mockStorage.set).toHaveBeenCalledWith(STORAGE_KEYS.SHOW_HIDDEN_APPS, true);
 
         // 再次双击：恢复只显示未隐藏站点
         await brand.trigger('dblclick');
         await flushPromises();
 
         expect(wrapper.text()).not.toContain('Secret');
-        expect(mockStorage.set).toHaveBeenCalledWith(STORAGE_KEYS.SHOW_HIDDEN_APPS, false);
     });
 
-    it('揭示状态从存储中恢复', async () => {
-        await mockStorage.set(STORAGE_KEYS.SHOW_HIDDEN_APPS, true);
-
+    it('揭示状态只对当前会话有效，不写入存储', async () => {
         const wrapper = mountApp();
         await flushPromises();
 
-        // 上次退出时处于揭示模式，刷新后隐藏卡片仍可见
+        await wrapper.findComponent(AppHeader).find('.brand').trigger('dblclick');
+        await flushPromises();
+
         expect(wrapper.text()).toContain('Secret');
+        expect(mockStorage.set).not.toHaveBeenCalledWith(
+            STORAGE_KEYS.SHOW_HIDDEN_APPS,
+            expect.anything()
+        );
+
+        wrapper.unmount();
+
+        // 模拟刷新：即使存储里残留旧版本写入的 true，重新挂载后也应恢复隐藏
+        await mockStorage.set(STORAGE_KEYS.SHOW_HIDDEN_APPS, true);
+
+        const reopened = mountApp();
+        await flushPromises();
+
+        expect(reopened.text()).not.toContain('Secret');
     });
 
     it('Alt+Shift+H 切换隐藏站点揭示模式', async () => {
@@ -405,5 +417,59 @@ describe('App.vue', () => {
         expect(openSpy).toHaveBeenCalledWith('https://github.com', '_blank');
 
         openSpy.mockRestore();
+    });
+
+    it('双击品牌区可显示 / 恢复隐藏站点', async () => {
+        const wrapper = mountApp();
+        await flushPromises();
+        await nextTick();
+
+        // 默认不显示隐藏站点
+        expect(wrapper.text()).not.toContain('Secret');
+
+        await wrapper.find('.brand').trigger('dblclick');
+        await flushPromises();
+        await nextTick();
+        expect(wrapper.text()).toContain('Secret');
+
+        await wrapper.find('.brand').trigger('dblclick');
+        await flushPromises();
+        await nextTick();
+        expect(wrapper.text()).not.toContain('Secret');
+    });
+
+    it('揭示隐藏站点后会给出提示（当前分类无隐藏站点时也能确认已生效）', async () => {
+        const wrapper = mountApp();
+        await flushPromises();
+
+        const toast = vi.mocked(useToast).mock.results[0]?.value as ReturnType<typeof useToast>;
+
+        await wrapper.find('.brand').trigger('dblclick');
+        await flushPromises();
+        expect(toast.success).toHaveBeenCalledWith('已显示隐藏站点（仅本次）');
+
+        await wrapper.find('.brand').trigger('dblclick');
+        await flushPromises();
+        expect(toast.success).toHaveBeenCalledWith('已恢复隐藏站点');
+    });
+
+    it('切换分类后自动退出隐藏站点揭示模式', async () => {
+        const wrapper = mountApp();
+        await flushPromises();
+        await nextTick();
+
+        await wrapper.find('.brand').trigger('dblclick');
+        await flushPromises();
+        await nextTick();
+        expect(wrapper.text()).toContain('Secret');
+
+        const sidebar = wrapper.findComponent(Sidebar);
+        sidebar.vm.$emit('select-category', 'media');
+        await flushPromises();
+        sidebar.vm.$emit('select-category', 'all');
+        await flushPromises();
+        await nextTick();
+
+        expect(wrapper.text()).not.toContain('Secret');
     });
 });

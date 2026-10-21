@@ -37,6 +37,8 @@ const emit = defineEmits<{
     (e: 'toggle-sidebar'): void;
     (e: 'toggle-personalization'): void;
     (e: 'menu-click'): void;
+    /** 双击品牌区（Logo / 标题）：用于切换隐藏站点揭示模式 */
+    (e: 'brand-dblclick'): void;
 }>();
 
 /** 未显式传入 logoSrc 时按浏览器分流品牌 Logo */
@@ -55,6 +57,17 @@ function handlePersonalizationClick(): void {
 function handleMenuClick(): void {
     emit('menu-click');
 }
+
+/**
+ * 双击品牌区切换隐藏站点揭示模式
+ *
+ * 用模板事件绑定而非在父组件里手动 addEventListener：
+ * 头部位于 `v-if / v-else` 分支中，进出极简模式会重建 DOM，
+ * 手动绑定的监听器会随之丢失（这正是「双击 Logo 没反应」的原因）。
+ */
+function handleBrandDblclick(): void {
+    emit('brand-dblclick');
+}
 </script>
 
 <template>
@@ -69,7 +82,8 @@ function handleMenuClick(): void {
                 <IconSvg name="menu" :size="20" />
             </button>
 
-            <div class="brand">
+            <!-- 不加 title 提示：隐藏站点的入口刻意保持隐蔽，提示由 HiddenTipModal 负责 -->
+            <div class="brand" @dblclick="handleBrandDblclick">
                 <div class="brand-icon is-image">
                     <img :src="resolvedLogoSrc" alt="Mugen" loading="lazy" />
                 </div>
@@ -148,6 +162,8 @@ function handleMenuClick(): void {
     height: 100%;
     min-width: 0;
     transition: gap 0.2s ease;
+    /* 双击切换隐藏站点时不希望顺带选中标题文字 */
+    user-select: none;
 }
 
 .collapse-toggle-btn {

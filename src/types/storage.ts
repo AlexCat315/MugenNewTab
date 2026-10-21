@@ -24,6 +24,10 @@ export const STORAGE_KEYS = {
     SIDEBAR_COLLAPSED: 'sidebarCollapsed',
     SEARCH_HISTORY: 'searchHistory',
     SELECTED_SEARCH_ENGINE: 'selectedSearchEngine',
+    /**
+     * 历史遗留键：揭示模式已改为仅当前会话有效，不再读写该键。
+     * 保留定义用于识别并兼容旧版本残留的数据。
+     */
     SHOW_HIDDEN_APPS: 'appNavigator_showHiddenApps',
     HIDDEN_TIP_DISMISSED: 'appNavigator_hiddenTipDismissed',
     LAYOUT_SETTINGS: 'appNavigator_layoutSettings'

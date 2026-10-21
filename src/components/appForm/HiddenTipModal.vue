@@ -57,6 +57,7 @@ watch(
             <p class="hidden-tip__text">
                 该站点已从首页隐藏。需要查看时，双击页面左上角的 Logo 图标，或按
                 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd>，即可临时显示隐藏的站点；再次操作恢复隐藏。
+                这个状态只在当前页面有效，刷新后会自动恢复隐藏。
             </p>
             <label class="hidden-tip__checkbox">
                 <input v-model="dontRemind" type="checkbox" />

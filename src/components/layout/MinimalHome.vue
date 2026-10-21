@@ -8,21 +8,41 @@
  * 交互：
  * - 搜索框自动聚焦，输入即联想（复用 useSearch 与 SearchSuggestions）
  * - Enter 搜索 / 选中高亮建议，↑↓ 切换建议，Esc 清空
- * - 磁贴 hover 浮起并露出编辑按钮，点击打开站点
+ * - 磁贴 hover 浮起并露出「更多」按钮，点击打开站点
+ * - 磁贴右键 / 触屏长按 / 更多按钮 / ContextMenu 键 → 站点操作菜单
+ *   （打开、复制链接、编辑、移动到分类、隐藏、删除）
+ * - 磁贴可直接拖拽排序，仅在当前分类范围内生效
  * - 分类切换用一行极轻的胶囊标签承载，超过 16 个站点时可展开全部
- * - 右下角悬停控制区提供：添加站点 / 个性化 / 退出极简
+ * - 右下角悬停控制区提供：添加站点 / 完整搜索 / 云同步 / 个性化 / 显示隐藏站点 / 退出极简
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { AppItem } from '@/types/app';
 import { useDataManager } from '@/composables/useDataManager';
 import { useSearch } from '@/composables/useSearch';
+import { useToast } from '@/composables/useToast';
 import { isImageIcon } from '@/utils/image.util';
 import IconSvg from '@/components/icon/IconSvg.vue';
 import SearchSuggestions from '@/components/search/SearchSuggestions.vue';
 import EngineSelector from '@/components/search/EngineSelector.vue';
+import MinimalSiteMenu from '@/components/layout/MinimalSiteMenu.vue';
 
 /** 首屏磁贴数量（超出后需手动展开） */
 const TILE_LIMIT = 16;
+
+/** 触屏长按打开菜单的等待时长（毫秒） */
+const LONG_PRESS_DURATION = 480;
+
+/** 长按弹出菜单后，抑制随后的 click 事件的时长（毫秒） */
+const CLICK_SUPPRESS_DURATION = 700;
+
+export interface MinimalHomeProps {
+    /** 是否显示隐藏站点（与完整模式的揭示模式共享同一状态） */
+    showHidden?: boolean;
+}
+
+const props = withDefaults(defineProps<MinimalHomeProps>(), {
+    showHidden: false
+});
 
 const emit = defineEmits<{
     /** 打开个性化面板 */
@@ -31,6 +51,10 @@ const emit = defineEmits<{
     (e: 'add-app'): void;
     /** 编辑站点 */
     (e: 'edit-app', app: AppItem): void;
+    /** 删除站点（由外层弹确认框） */
+    (e: 'delete-app', app: AppItem): void;
+    /** 切换隐藏站点揭示模式 */
+    (e: 'toggle-hidden-reveal'): void;
     /** 打开完整搜索（历史 / 引擎切换） */
     (e: 'open-full-search'): void;
     /** 打开云同步面板 */
@@ -40,11 +64,26 @@ const emit = defineEmits<{
 }>();
 
 const dataManager = useDataManager({ autoInit: true });
+const toast = useToast();
 
 const activeCategoryId = ref('all');
 const showAll = ref(false);
 const inputEl = ref<HTMLInputElement | null>(null);
 const rootEl = ref<HTMLElement | null>(null);
+
+/** 当前打开操作菜单的站点（null 表示菜单关闭） */
+const menuApp = ref<AppItem | null>(null);
+const menuPoint = ref({ x: 0, y: 0 });
+
+/** 正在拖拽的站点 id */
+const dragId = ref<string | null>(null);
+/** 拖拽经过的目标索引 */
+const dropIndex = ref<number | null>(null);
+
+/** 长按计时器 */
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+/** 该时间戳之前忽略磁贴 click（长按菜单弹出后手指抬起会触发一次 click） */
+let suppressClickUntil = 0;
 
 const {
     query,
@@ -69,14 +108,25 @@ const {
 
 const categories = computed(() => dataManager.categories.value);
 
-/** 当前分类下的可见站点（隐藏站点不参与极简展示） */
+/** 可移动到的分类（不含「全部」虚拟分类） */
+const userCategories = computed(() => dataManager.userCategories.value);
+
+/** 当前分类下的站点；未开启揭示模式时过滤掉隐藏站点 */
 const scopedApps = computed<AppItem[]>(() => {
     const source =
         activeCategoryId.value === 'all'
             ? dataManager.apps.value
             : dataManager.getAppsByCategory(activeCategoryId.value);
-    return source.filter((app) => !app.hidden);
+    return props.showHidden ? source : source.filter((app) => !app.hidden);
 });
+
+const hiddenCount = computed(
+    () =>
+        (activeCategoryId.value === 'all'
+            ? dataManager.apps.value
+            : dataManager.getAppsByCategory(activeCategoryId.value)
+        ).filter((app) => app.hidden).length
+);
 
 const tiles = computed<AppItem[]>(() =>
     showAll.value ? scopedApps.value : scopedApps.value.slice(0, TILE_LIMIT)
@@ -167,6 +217,8 @@ function handlePagePointerDown(event: PointerEvent): void {
 // ==================== 磁贴 ====================
 
 function handleTileClick(app: AppItem): void {
+    // 长按刚弹出菜单时，手指抬起会补发一次 click，这里直接吞掉
+    if (Date.now() < suppressClickUntil) return;
     if (!app.url) return;
     window.open(app.url, '_blank');
 }
@@ -180,6 +232,218 @@ function toggleShowAll(): void {
     showAll.value = !showAll.value;
 }
 
+// ==================== 站点操作菜单 ====================
+
+function openMenu(app: AppItem, point: { clientX: number; clientY: number }): void {
+    clearLongPress();
+    menuApp.value = app;
+    menuPoint.value = { x: point.clientX, y: point.clientY };
+}
+
+function closeMenu(): void {
+    menuApp.value = null;
+}
+
+/** 「更多」按钮：把菜单挂在按钮右下角 */
+function openMenuFromButton(app: AppItem, event: MouseEvent): void {
+    const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    openMenu(app, {
+        clientX: rect ? rect.left + rect.width : 0,
+        clientY: rect ? rect.bottom + 4 : 0
+    });
+}
+
+/** 键盘打开菜单（ContextMenu 键 / Shift+F10），锚定在磁贴中心 */
+function handleTileKeydown(app: AppItem, event: KeyboardEvent): void {
+    const isMenuKey =
+        event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10');
+    if (!isMenuKey) return;
+
+    event.preventDefault();
+    const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    openMenu(app, {
+        clientX: rect ? rect.left + rect.width / 2 : window.innerWidth / 2,
+        clientY: rect ? rect.top + rect.height / 2 : window.innerHeight / 2
+    });
+}
+
+function clearLongPress(): void {
+    if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+    }
+}
+
+/** 触屏长按打开菜单；鼠标交给 contextmenu 事件 */
+function handleTilePointerDown(app: AppItem, event: PointerEvent): void {
+    if (event.pointerType === 'mouse') return;
+
+    clearLongPress();
+    const { clientX, clientY } = event;
+    longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        suppressClickUntil = Date.now() + CLICK_SUPPRESS_DURATION;
+        openMenu(app, { clientX, clientY });
+    }, LONG_PRESS_DURATION);
+}
+
+function handleMenuOpen(): void {
+    const app = menuApp.value;
+    closeMenu();
+    if (!app?.url) return;
+    window.open(app.url, '_blank');
+}
+
+async function handleMenuCopyLink(): Promise<void> {
+    const app = menuApp.value;
+    closeMenu();
+    if (!app) return;
+
+    try {
+        await navigator.clipboard?.writeText(app.url);
+        toast.success('链接已复制');
+        return;
+    } catch {
+        // 剪贴板 API 不可用（未聚焦 / 无权限）时退回临时 textarea 方案
+    }
+
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = app.url;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!copied) throw new Error('execCommand failed');
+        toast.success('链接已复制');
+    } catch {
+        toast.error('复制失败，请手动复制链接');
+    }
+}
+
+function handleMenuEdit(): void {
+    const app = menuApp.value;
+    closeMenu();
+    if (app) emit('edit-app', app);
+}
+
+function handleMenuDelete(): void {
+    const app = menuApp.value;
+    closeMenu();
+    if (app) emit('delete-app', app);
+}
+
+async function handleMenuToggleHidden(): Promise<void> {
+    const app = menuApp.value;
+    closeMenu();
+    if (!app) return;
+
+    try {
+        await dataManager.updateApp(app.id, { hidden: !app.hidden });
+        toast.success(app.hidden ? `已取消隐藏「${app.name}」` : `已隐藏「${app.name}」`);
+    } catch (error) {
+        toast.error(error instanceof Error ? error.message : '操作失败');
+    }
+}
+
+async function handleMenuMove(categoryId: string): Promise<void> {
+    const app = menuApp.value;
+    closeMenu();
+    if (!app || app.category === categoryId) return;
+
+    try {
+        await dataManager.updateApp(app.id, { category: categoryId });
+        const target = dataManager.getCategoryById(categoryId);
+        toast.success(`已移动到「${target?.name ?? '新分类'}」`);
+    } catch (error) {
+        toast.error(error instanceof Error ? error.message : '移动失败');
+    }
+}
+
+// ==================== 拖拽排序 ====================
+
+function handleDragStart(app: AppItem, event: DragEvent): void {
+    closeMenu();
+    clearLongPress();
+    dragId.value = app.id;
+    dropIndex.value = null;
+
+    if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        // Firefox 必须写入数据才会真正开始拖拽
+        event.dataTransfer.setData('text/plain', app.id);
+    }
+}
+
+function handleDragOver(index: number): void {
+    if (!dragId.value) return;
+    dropIndex.value = index;
+}
+
+function handleDragEnd(): void {
+    dragId.value = null;
+    dropIndex.value = null;
+}
+
+/**
+ * 把当前分类的展示顺序写回全局顺序。
+ *
+ * 全局 apps 是跨分类混排的，直接整体重排会把其他分类的位置也打乱，
+ * 因此只替换「属于当前展示范围」的那些槽位。
+ */
+async function applyScopedOrder(orderedIds: string[]): Promise<void> {
+    const scopedIds = new Set(scopedApps.value.map((app) => app.id));
+    const nextIds = dataManager.apps.value.map((app) => app.id);
+    const slots: number[] = [];
+
+    dataManager.apps.value.forEach((app, index) => {
+        if (scopedIds.has(app.id)) slots.push(index);
+    });
+
+    if (slots.length !== orderedIds.length) return;
+
+    slots.forEach((slot, index) => {
+        nextIds[slot] = orderedIds[index];
+    });
+
+    // 顺序没变就不写盘，避免每次拖动都触发一次存储更新
+    const currentIds = dataManager.apps.value.map((app) => app.id);
+    if (nextIds.join('\u0000') === currentIds.join('\u0000')) return;
+
+    await dataManager.updateAppsOrder(nextIds);
+}
+
+async function handleDrop(index: number): Promise<void> {
+    const id = dragId.value;
+    const target = tiles.value[index];
+    dragId.value = null;
+    dropIndex.value = null;
+
+    if (!id || !target || target.id === id) return;
+
+    const visibleIds = tiles.value
+        .map((app) => app.id)
+        .filter((itemId) => itemId !== id);
+    const insertAt = visibleIds.indexOf(target.id);
+    if (insertAt === -1) return;
+    visibleIds.splice(insertAt, 0, id);
+
+    // 超出首屏的站点保持原相对顺序，排在可见项之后
+    const rest = scopedApps.value
+        .map((app) => app.id)
+        .filter((itemId) => !visibleIds.includes(itemId));
+
+    try {
+        await applyScopedOrder([...visibleIds, ...rest]);
+        toast.success('排序已保存');
+    } catch (error) {
+        toast.error(error instanceof Error ? error.message : '排序失败');
+    }
+}
+
 // ==================== 生命周期 ====================
 
 onMounted(() => {
@@ -187,9 +451,14 @@ onMounted(() => {
     window.setTimeout(focusInput, 80);
 });
 
-// 切换分类后收起展开态，避免停留在超长列表
+onUnmounted(() => {
+    clearLongPress();
+});
+
+// 切换分类后收起展开态，避免停留在超长列表；菜单锚定的站点可能已不在当前视图
 watch(activeCategoryId, () => {
     showAll.value = false;
+    closeMenu();
 });
 
 defineExpose({ focusInput });
@@ -262,12 +531,29 @@ defineExpose({ focusInput });
             <!-- ============ 站点磁贴 ============ -->
             <section v-if="tiles.length > 0" class="minimal-tiles" aria-label="常用站点">
                 <button
-                    v-for="app in tiles"
+                    v-for="(app, index) in tiles"
                     :key="app.id"
                     type="button"
                     class="minimal-tile"
+                    :class="{
+                        'is-hidden': app.hidden,
+                        'is-dragging': dragId === app.id,
+                        'is-drop-target': dropIndex === index && !!dragId && dragId !== app.id,
+                    }"
+                    :data-app-id="app.id"
                     :title="app.description || app.name"
+                    draggable="true"
                     @click="handleTileClick(app)"
+                    @contextmenu.prevent="openMenu(app, $event)"
+                    @keydown="handleTileKeydown(app, $event)"
+                    @pointerdown="handleTilePointerDown(app, $event)"
+                    @pointerup="clearLongPress"
+                    @pointercancel="clearLongPress"
+                    @pointerleave="clearLongPress"
+                    @dragstart="handleDragStart(app, $event)"
+                    @dragover.prevent="handleDragOver(index)"
+                    @drop.prevent="handleDrop(index)"
+                    @dragend="handleDragEnd"
                 >
                     <span class="minimal-tile__icon">
                         <IconSvg
@@ -282,18 +568,24 @@ defineExpose({ focusInput });
                     <span class="minimal-tile__name">{{ app.name }}</span>
 
                     <span
-                        class="minimal-tile__edit"
+                        class="minimal-tile__more"
                         role="button"
                         tabindex="-1"
-                        title="编辑"
-                        @click.stop="emit('edit-app', app)"
+                        title="更多操作"
+                        @click.stop="openMenuFromButton(app, $event)"
                     >
-                        <IconSvg name="edit" :size="13" monochrome alt="" />
+                        <IconSvg name="more" :size="14" monochrome alt="" />
                     </span>
                 </button>
             </section>
 
             <p v-else-if="dataManager.isLoading.value" class="minimal-hint">加载中…</p>
+            <p v-else-if="isEmpty && hiddenCount > 0 && !showHidden" class="minimal-hint">
+                当前分类下的 {{ hiddenCount }} 个站点都已隐藏
+                <button type="button" class="minimal-hint__link" @click="emit('toggle-hidden-reveal')">
+                    显示它们
+                </button>
+            </p>
             <p v-else-if="isEmpty" class="minimal-hint">
                 当前分类下还没有站点
                 <button type="button" class="minimal-hint__link" @click="emit('add-app')">添加一个</button>
@@ -317,6 +609,16 @@ defineExpose({ focusInput });
                 <button type="button" class="minimal-controls__btn" title="云同步" @click="emit('open-cloud-sync')">
                     <IconSvg name="cloud" :size="18" monochrome alt="" />
                 </button>
+                <button
+                    type="button"
+                    class="minimal-controls__btn"
+                    :class="{ 'is-active': showHidden }"
+                    :title="showHidden ? '恢复隐藏站点 (Alt+Shift+H)' : '显示隐藏站点 (Alt+Shift+H)'"
+                    :aria-pressed="showHidden"
+                    @click="emit('toggle-hidden-reveal')"
+                >
+                    <IconSvg :name="showHidden ? 'eye' : 'eye-off'" :size="18" monochrome alt="" />
+                </button>
                 <button type="button" class="minimal-controls__btn" title="个性化设置" @click="emit('open-personalization')">
                     <IconSvg name="palette" :size="18" monochrome alt="" />
                 </button>
@@ -334,6 +636,22 @@ defineExpose({ focusInput });
                 <IconSvg name="setting" :size="18" monochrome alt="" />
             </button>
         </div>
+
+        <!-- ============ 站点操作菜单（右键 / 长按 / 更多按钮触发） ============ -->
+        <MinimalSiteMenu
+            v-if="menuApp"
+            :app="menuApp"
+            :categories="userCategories"
+            :x="menuPoint.x"
+            :y="menuPoint.y"
+            @close="closeMenu"
+            @open="handleMenuOpen"
+            @copy-link="handleMenuCopyLink"
+            @edit="handleMenuEdit"
+            @delete="handleMenuDelete"
+            @toggle-hidden="handleMenuToggleHidden"
+            @move="handleMenuMove"
+        />
     </div>
 </template>
 
@@ -532,9 +850,35 @@ defineExpose({ focusInput });
     &:hover {
         background: var(--md-sys-color-primary-container);
 
-        .minimal-tile__edit {
+        .minimal-tile__more {
             opacity: 1;
         }
+    }
+
+    // 揭示模式下的隐藏站点：虚线 + 半透明，与完整模式保持一致
+    &.is-hidden {
+        opacity: 0.55;
+
+        .minimal-tile__icon {
+            border: 1px dashed var(--md-sys-color-outline-variant);
+        }
+    }
+
+    // 拖拽中：原地留一个淡出占位，避免布局跳动
+    &.is-dragging {
+        opacity: 0.35;
+    }
+
+    // 拖拽经过的目标：左侧插入指示线
+    &.is-drop-target::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 10%;
+        bottom: 10%;
+        width: 2px;
+        border-radius: 2px;
+        background: var(--md-sys-color-primary);
     }
 }
 
@@ -559,7 +903,7 @@ defineExpose({ focusInput });
     @include line-clamp(2);
 }
 
-.minimal-tile__edit {
+.minimal-tile__more {
     position: absolute;
     top: 4px;
     right: 4px;
@@ -616,11 +960,12 @@ defineExpose({ focusInput });
     }
 }
 
-// ==================== 右上角控制区（默认收成一个按钮，悬停展开） ====================
+// ==================== 右下角控制区（默认收成一个按钮，悬停展开） ====================
+// 放右下角而不是右上角：Toast 固定在右上角，站点操作后的提示会盖住控制区
 .minimal-controls {
     position: fixed;
     right: 16px;
-    top: 16px;
+    bottom: 16px;
     display: flex;
     align-items: center;
     padding: 6px;
@@ -653,7 +998,7 @@ defineExpose({ focusInput });
 
 .minimal-controls:hover .minimal-controls__actions,
 .minimal-controls:focus-within .minimal-controls__actions {
-    max-width: 240px;
+    max-width: 300px;
     margin-right: 6px;
     opacity: 1;
     pointer-events: auto;
@@ -676,6 +1021,12 @@ defineExpose({ focusInput });
         background: var(--md-sys-color-primary-container);
         color: var(--md-sys-color-primary);
     }
+
+    // 揭示模式开启时高亮，避免用户忘了自己还开着
+    &.is-active {
+        background: var(--md-sys-color-primary-container);
+        color: var(--md-sys-color-primary);
+    }
 }
 
 // 触发器：始终可见，作为展开的锚点
@@ -686,7 +1037,7 @@ defineExpose({ focusInput });
 @include respond-to(mobile) {
     // 触屏没有 hover，直接常驻展开，隐藏锚点按钮
     .minimal-controls__actions {
-        max-width: 240px;
+        max-width: 300px;
         margin-right: 0;
         opacity: 1;
         pointer-events: auto;
