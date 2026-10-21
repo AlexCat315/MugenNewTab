@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
 import AppCard from '@/components/app/AppCard.vue';
 import type { AppItem } from '@/types/app';
 
@@ -16,6 +17,10 @@ function createApp(overrides: Partial<AppItem> = {}): AppItem {
 }
 
 describe('AppCard', () => {
+    beforeEach(() => {
+        setActivePinia(createPinia());
+    });
+
     afterEach(() => {
         vi.restoreAllMocks();
     });

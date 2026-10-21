@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
 import FabMenu from '@/components/layout/FabMenu.vue';
 import type { FabMenuItem } from '@/components/layout/FabMenu.vue';
 
@@ -12,6 +13,10 @@ const items: FabMenuItem[] = [
 ];
 
 describe('FabMenu', () => {
+    beforeEach(() => {
+        setActivePinia(createPinia());
+    });
+
     it('渲染 FAB 按钮与菜单项', () => {
         const wrapper = mount(FabMenu, {
             props: { items, active: true }

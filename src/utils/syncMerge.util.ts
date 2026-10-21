@@ -2,11 +2,18 @@
  * 云同步三方合并工具
  * 以「上次同步成功的快照」为 base，比对 base / local / remote 三方，
  * 按 id 增量合并站点数据与用户图标库，冲突时本地优先。
+ *
+ * 在按 id 合并之上，额外处理两类「同一实体、不同 id」的跨设备重复：
+ *   - 站点：按 URL 判重（`https://a.com` 与 `https://a.com/` 视为同一站点），本地优先保留
+ *   - 分类：按名称判重，被丢弃的远端分类会把引用它的站点改指到本地同名分类
+ * 只处理「远端 vs 本地」的重复，本地自身已有的重复保持原样，避免擅自改动用户数据。
  */
 
 import type { AppNavigatorData, AppItem, Category } from '@/types/app';
 import type { UiCategory, UserUiLib } from '@/types/ui';
 import { STORAGE_KEYS } from '@/types/storage';
+import { getUrlKey } from '@/utils/url.util';
+import { normalizeNameKey } from '@/utils/name.util';
 
 /** 同步快照数据（键为存储键名） */
 export type SyncSnapshot = Record<string, unknown>;
@@ -110,15 +117,115 @@ export function mergeById<T extends { id: string }>(
     return result;
 }
 
+/**
+ * 合并站点列表
+ *
+ * 先按 id 做三方合并，再去掉「远端与本地指向同一 URL」的重复项：
+ * - 本地条目全部保留（本地自身已有的重复属于用户当前数据，不做删减）
+ * - 远端条目若与本地（或先前保留下来的远端条目）URL 相同，则丢弃，本地版本胜出
+ */
+export function mergeAppList(
+    base: AppItem[] | null | undefined,
+    local: AppItem[] | null | undefined,
+    remote: AppItem[] | null | undefined
+): AppItem[] {
+    const merged = mergeById<AppItem>(base, local, remote);
+    const localIds = new Set((local ?? []).map((app) => app.id));
+    const seenKeys = new Set<string>();
+
+    for (const app of local ?? []) {
+        const key = getUrlKey(app.url);
+        if (key) seenKeys.add(key);
+    }
+
+    const result: AppItem[] = [];
+    for (const app of merged) {
+        const key = getUrlKey(app.url);
+
+        // 无有效 URL 或属于本地条目：一律保留
+        if (!key || localIds.has(app.id)) {
+            result.push(app);
+            continue;
+        }
+
+        if (seenKeys.has(key)) {
+            continue;
+        }
+        seenKeys.add(key);
+        result.push(app);
+    }
+
+    return result;
+}
+
+/**
+ * 合并分类列表
+ *
+ * 按 id 合并后，把「与本地分类同名」的远端分类丢掉，并返回
+ * `远端分类 id → 本地分类 id` 的映射，供站点改指使用。
+ */
+function mergeCategoryList(
+    base: Category[] | null | undefined,
+    local: Category[] | null | undefined,
+    remote: Category[] | null | undefined
+): { categories: Category[]; remap: Map<string, string> } {
+    const merged = mergeById<Category>(base, local, remote);
+    const localIds = new Set((local ?? []).map((category) => category.id));
+    const idByName = new Map<string, string>();
+
+    for (const category of local ?? []) {
+        const key = normalizeNameKey(category.name);
+        if (key && !idByName.has(key)) {
+            idByName.set(key, category.id);
+        }
+    }
+
+    const categories: Category[] = [];
+    const remap = new Map<string, string>();
+
+    for (const category of merged) {
+        if (localIds.has(category.id)) {
+            categories.push(category);
+            continue;
+        }
+
+        const key = normalizeNameKey(category.name);
+        if (key && idByName.has(key)) {
+            // 远端同名分类 → 合并进本地分类
+            remap.set(category.id, idByName.get(key)!);
+            continue;
+        }
+
+        if (key) idByName.set(key, category.id);
+        categories.push(category);
+    }
+
+    return { categories, remap };
+}
+
 /** 合并站点主数据（分类 + 站点） */
 export function mergeAppNavigatorData(
     base: AppNavigatorData | null | undefined,
     local: AppNavigatorData | null | undefined,
     remote: AppNavigatorData | null | undefined
 ): AppNavigatorData {
+    const { categories, remap } = mergeCategoryList(
+        base?.categories,
+        local?.categories,
+        remote?.categories
+    );
+    const apps = mergeAppList(base?.apps, local?.apps, remote?.apps);
+
+    if (remap.size === 0) {
+        return { categories, apps };
+    }
+
+    // 远端分类被合并到本地同名分类后，引用它的站点要改指过去，否则会变成「无分类」
     return {
-        categories: mergeById<Category>(base?.categories, local?.categories, remote?.categories),
-        apps: mergeById<AppItem>(base?.apps, local?.apps, remote?.apps)
+        categories,
+        apps: apps.map((app) =>
+            remap.has(app.category) ? { ...app, category: remap.get(app.category)! } : app
+        )
     };
 }
 

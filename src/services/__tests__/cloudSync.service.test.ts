@@ -111,7 +111,13 @@ async function seedSignedIn(
     await service.loadSettings();
 }
 
-const app = (id: string, name: string): AppItem => ({ id, name, url: 'https://example.com', category: 'c1' });
+/** 默认给每个 id 一个独立 URL，避免触发 URL 去重（去重逻辑在 syncMerge 单测里覆盖） */
+const app = (id: string, name: string): AppItem => ({
+    id,
+    name,
+    url: `https://example.com/${id}`,
+    category: 'c1'
+});
 const EMPTY_UI_LIB: UserUiLib = { categories: [], items: [] };
 
 /** 构造三方合并场景所需的 base/local/remote 种子数据 */

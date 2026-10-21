@@ -28,6 +28,7 @@ import WallpaperLayer from '@/components/layout/WallpaperLayer.vue';
 import AppHeader from '@/components/layout/AppHeader.vue';
 import Sidebar from '@/components/layout/Sidebar.vue';
 import MainContent from '@/components/layout/MainContent.vue';
+import MinimalHome from '@/components/layout/MinimalHome.vue';
 import FabMenu from '@/components/layout/FabMenu.vue';
 import SearchModal from '@/components/search/SearchModal.vue';
 import AppEditModal from '@/components/appForm/AppEditModal.vue';
@@ -79,7 +80,7 @@ const appEditInitialCategoryId = ref('');
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const headerRef = ref<InstanceType<typeof AppHeader> | null>(null);
-const headerWrapperRef = ref<HTMLDivElement | null>(null);
+const minimalHomeRef = ref<InstanceType<typeof MinimalHome> | null>(null);
 
 // ==================== 派生状态 ====================
 const currentCategory = computed<Category | undefined>(() =>
@@ -143,12 +144,8 @@ let storageUnsubscribe: (() => void) | null = null;
 
 async function loadSettings(): Promise<void> {
     try {
-        const [collapsed, hidden] = await Promise.all([
-            storageManager.get(STORAGE_KEYS.SIDEBAR_COLLAPSED),
-            storageManager.get(STORAGE_KEYS.SHOW_HIDDEN_APPS),
-        ]);
+        const collapsed = await storageManager.get(STORAGE_KEYS.SIDEBAR_COLLAPSED);
         sidebarCollapsed.value = !!collapsed;
-        showHiddenApps.value = !!hidden;
     } catch (error) {
         console.error('[App] 加载设置失败:', error);
     }
@@ -163,13 +160,15 @@ async function saveSidebarCollapsed(value: boolean): Promise<void> {
     }
 }
 
-async function saveShowHiddenApps(value: boolean): Promise<void> {
+/**
+ * 切换隐藏站点揭示模式。
+ *
+ * 只改内存状态，**不写存储**：揭示是「临时看一眼」的动作，
+ * 刷新页面或重开新标签页就应该自动回到隐藏状态。
+ * 若持久化，用户双击 Logo 看完忘记切回去，隐藏站点就会长期挂在首页上。
+ */
+function setShowHiddenApps(value: boolean): void {
     showHiddenApps.value = value;
-    try {
-        await storageManager.set(STORAGE_KEYS.SHOW_HIDDEN_APPS, value);
-    } catch (error) {
-        console.error('[App] 保存隐藏站点状态失败:', error);
-    }
 }
 
 onMounted(() => {
@@ -184,29 +183,22 @@ onMounted(() => {
             console.error('[App] 初始化布局设置失败:', error);
         });
 
-    // 监听外部存储变更，同步侧边栏折叠与隐藏站点揭示状态（跨标签页/云同步）
+    // 监听外部存储变更，同步侧边栏折叠状态（跨标签页）
+    // 揭示模式不参与同步：它是当前页面的临时视图状态
     storageUnsubscribe = storageManager.subscribe((changes) => {
         const collapsedChange = changes[STORAGE_KEYS.SIDEBAR_COLLAPSED];
         if (collapsedChange && typeof collapsedChange.newValue === 'boolean') {
             sidebarCollapsed.value = collapsedChange.newValue;
         }
-        const hiddenChange = changes[STORAGE_KEYS.SHOW_HIDDEN_APPS];
-        if (hiddenChange && typeof hiddenChange.newValue === 'boolean') {
-            showHiddenApps.value = hiddenChange.newValue;
-        }
     });
 
     // 全局快捷键 Ctrl+K / Cmd+K 打开搜索
     document.addEventListener('keydown', handleGlobalKeydown);
-
-    // 双击 Logo 切换隐藏站点视图
-    headerWrapperRef.value?.addEventListener('dblclick', handleHeaderDblclick);
 });
 
 onUnmounted(() => {
     storageUnsubscribe?.();
     document.removeEventListener('keydown', handleGlobalKeydown);
-    headerWrapperRef.value?.removeEventListener('dblclick', handleHeaderDblclick);
 });
 
 // ==================== 事件处理 ====================
@@ -220,13 +212,13 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'h') {
         event.preventDefault();
         toggleHiddenApps();
+        return;
     }
-}
-
-function handleHeaderDblclick(event: MouseEvent): void {
-    const target = event.target as HTMLElement | null;
-    if (target?.closest('.brand')) {
-        toggleHiddenApps();
+    // Alt+Shift+M：切换极简约模式
+    if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm') {
+        event.preventDefault();
+        void layoutStore.setMinimalMode(!layoutStore.minimalMode);
+        return;
     }
 }
 
@@ -251,12 +243,15 @@ function openSearch(): void {
 }
 
 function toggleHiddenApps(): void {
-    void saveShowHiddenApps(!showHiddenApps.value);
+    const next = !showHiddenApps.value;
+    setShowHiddenApps(next);
+    // 给出反馈：当前分类没有隐藏站点时，画面不会有任何变化，容易误以为没生效
+    toast.success(next ? '已显示隐藏站点（仅本次）' : '已恢复隐藏站点');
 }
 
 function handleSelectCategory(categoryId: string): void {
     activeCategoryId.value = categoryId;
-    void saveShowHiddenApps(false);
+    setShowHiddenApps(false);
     closeMobileSidebar();
 }
 
@@ -361,6 +356,11 @@ function handleSavedCategory(category: Category): void {
     }
 }
 
+/** 退出极简约模式，回到标准三栏布局 */
+function handleExitMinimal(): void {
+    void layoutStore.setMinimalMode(false);
+}
+
 function handleFabSelect(action: string): void {
     switch (action) {
         case 'add-app':
@@ -444,7 +444,7 @@ async function handleImportFile(event: Event): Promise<void> {
         } else {
             activeCategoryId.value = dataManager.userCategories.value[0]?.id ?? 'all';
         }
-        void saveShowHiddenApps(false);
+        setShowHiddenApps(false);
     } catch (error) {
         toast.error(error instanceof Error ? error.message : '导入失败');
     }
@@ -464,10 +464,26 @@ const fabItems = [
 </script>
 
 <template>
-    <div id="app-root" class="app-root">
+    <div id="app-root" class="app-root" :class="{ 'minimal-mode': layoutStore.minimalMode }">
         <WallpaperLayer />
 
-        <div ref="headerWrapperRef" class="header-wrapper">
+        <!-- ============ 极简约模式：居中搜索框 + 站点磁贴 ============ -->
+        <MinimalHome
+            v-if="layoutStore.minimalMode"
+            ref="minimalHomeRef"
+            :show-hidden="showHiddenApps"
+            @open-personalization="personalizationOpen = true"
+            @add-app="openAddApp(activeCategoryId)"
+            @edit-app="openEditApp"
+            @delete-app="handleDeleteApp"
+            @toggle-hidden-reveal="toggleHiddenApps"
+            @open-full-search="openSearch"
+            @open-cloud-sync="cloudSyncOpen = true"
+            @exit-minimal="handleExitMinimal"
+        />
+
+        <template v-else>
+        <div class="header-wrapper">
             <AppHeader
                 ref="headerRef"
                 :sidebar-collapsed="sidebarCollapsed"
@@ -475,6 +491,7 @@ const fabItems = [
                 @toggle-sidebar="toggleSidebar"
                 @toggle-personalization="togglePersonalization"
                 @menu-click="openMobileSidebar"
+                @brand-dblclick="toggleHiddenApps"
             />
         </div>
 
@@ -563,6 +580,7 @@ const fabItems = [
             @update:active="fabOpen = $event"
             @select="handleFabSelect"
         />
+        </template>
 
         <SearchModal v-model="searchOpen" />
 

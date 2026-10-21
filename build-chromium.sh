@@ -20,7 +20,7 @@ npm run build:chromium
 echo ""
 echo "📂 复制构建产物到 build-chromium/..."
 mkdir -p build-chromium
-cp -r dist/* build-chromium/
+cp -r dist-chrome/* build-chromium/
 
 echo ""
 echo "✅ 构建完成"

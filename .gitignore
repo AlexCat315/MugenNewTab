@@ -28,6 +28,9 @@ bower_components/
 
 # Build / distribution (if generated)
 dist/
+dist-chrome/
+dist-edge/
+dist-firefox/
 build/
 build-*/
 release/

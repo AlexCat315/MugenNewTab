@@ -211,7 +211,7 @@ watch(
     top: var(--header-height);
     width: var(--sidebar-width);
     height: calc(100vh - var(--header-height));
-    background: var(--md-sys-color-primary-container);
+    background: var(--md-sys-color-surface);
     z-index: 999;
     overflow-y: auto;
     overflow-x: hidden;
@@ -275,7 +275,7 @@ watch(
     padding: 10px 12px;
     margin: 4px 0;
     border-radius: 8px;
-    color: var(--md-sys-color-on-surface);
+    color: var(--md-sys-color-on-surface-variant);
     text-decoration: none;
     font-weight: 500;
     font-size: 13px;
@@ -291,9 +291,10 @@ watch(
     }
 
     &.active {
-        background: var(--md-sys-color-primary);
-        color: var(--md-sys-color-on-primary);
-        border-color: rgba(255, 255, 255, 0.2);
+        background: var(--md-sys-color-primary-container);
+        color: var(--md-sys-color-primary);
+        border-color: transparent;
+        font-weight: 600;
     }
 
     &.pressing {
@@ -346,12 +347,12 @@ watch(
     align-items: center;
     padding: 10px 12px;
     border-radius: 8px;
-    color: var(--md-sys-color-on-surface);
-    background: var(--md-sys-color-surface-variant);
+    color: var(--md-sys-color-on-surface-variant);
+    background: transparent;
     font-weight: 500;
     font-size: 13px;
     @include md-transition(all, 0.2s);
-    border: 1px solid transparent;
+    border: 1px solid var(--md-sys-color-outline-variant);
 
     &:hover {
         background: var(--md-sys-color-primary-container);

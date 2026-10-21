@@ -9,6 +9,8 @@ import { ref, computed } from 'vue';
 import { storageManager } from '@/services/storage.service';
 import { loadDefaultData } from '@/services/config.service';
 import { generateAppId, generateCategoryId } from '@/utils/id.util';
+import { normalizeUrl, getUrlKey } from '@/utils/url.util';
+import { normalizeNameKey } from '@/utils/name.util';
 import type { AppNavigatorData, AppItem, Category, AppInput, CategoryInput } from '@/types/app';
 import type { UserUiLib } from '@/types/ui';
 import type { BackupData, StorageValue } from '@/types/storage';
@@ -80,6 +82,55 @@ function normalizeMainData(data: AppNavigatorData): AppNavigatorData {
 /** 写锁名称 */
 const WRITE_LOCK = 'mugen-newtab-data-write';
 
+/**
+ * 校验站点 URL 是否与已有站点重复
+ *
+ * 按 getUrlKey 比较，`https://a.com`、`https://a.com/`、`http://www.a.com` 视为同一站点。
+ * 编辑场景通过 excludeId 排除自身。
+ *
+ * @throws 存在重复时抛出可直接展示给用户的错误
+ */
+function assertAppUrlUnique(
+    draft: AppNavigatorData,
+    url: string,
+    excludeId?: string
+): void {
+    const key = getUrlKey(url);
+    if (!key) return;
+
+    const duplicate = draft.apps.find(
+        (app) => app.id !== excludeId && getUrlKey(app.url) === key
+    );
+    if (!duplicate) return;
+
+    const categoryName =
+        draft.categories.find((category) => category.id === duplicate.category)?.name ?? '未分类';
+    throw new Error(`该网站已存在：${duplicate.name}（分类：${categoryName}）`);
+}
+
+/**
+ * 校验分类名称是否重复
+ *
+ * 忽略首尾空白、连续空白、大小写差异。
+ *
+ * @throws 存在同名分类时抛出可直接展示给用户的错误
+ */
+function assertCategoryNameUnique(
+    draft: AppNavigatorData,
+    name: string,
+    excludeId?: string
+): void {
+    const key = normalizeNameKey(name);
+    if (!key) return;
+
+    const duplicate = draft.categories.find(
+        (category) => category.id !== excludeId && normalizeNameKey(category.name) === key
+    );
+    if (duplicate) {
+        throw new Error(`分类「${duplicate.name}」已存在，请换一个名称`);
+    }
+}
+
 export const useAppDataStore = defineStore('appData', () => {
     // ==================== State ====================
     const data = ref<AppNavigatorData>(normalizeMainData({ categories: [], apps: [] }));
@@ -106,6 +157,32 @@ export const useAppDataStore = defineStore('appData', () => {
 
     function getCategoryById(id: string): Category | undefined {
         return categories.value.find((category) => category.id === id);
+    }
+
+    /**
+     * 按 URL 查找已存在的站点
+     *
+     * @param url 待查 URL，内部会做规范化
+     * @param excludeId 需要排除的站点 ID（编辑时排除自身）
+     */
+    function findAppByUrl(url: string, excludeId?: string): AppItem | undefined {
+        const key = getUrlKey(url);
+        if (!key) return undefined;
+        return apps.value.find((app) => app.id !== excludeId && getUrlKey(app.url) === key);
+    }
+
+    /**
+     * 按名称查找已存在的分类
+     *
+     * @param name 待查名称，内部会做空白与大小写归一
+     * @param excludeId 需要排除的分类 ID（改名时排除自身）
+     */
+    function findCategoryByName(name: string, excludeId?: string): Category | undefined {
+        const key = normalizeNameKey(name);
+        if (!key) return undefined;
+        return categories.value.find(
+            (category) => category.id !== excludeId && normalizeNameKey(category.name) === key
+        );
     }
 
     // ==================== Internal Helpers ====================
@@ -335,11 +412,17 @@ export const useAppDataStore = defineStore('appData', () => {
 
     /**
      * 添加应用
+     *
+     * URL 会先规范化再入库；与已有站点指向同一站点时拒绝添加并抛错。
      */
     async function addApp(app: AppInput): Promise<AppItem> {
         return mutateMain((draft) => {
+            const url = normalizeUrl(app.url);
+            assertAppUrlUnique(draft, url);
+
             const newApp: AppItem = {
                 ...clone(app),
+                url,
                 id: generateAppId()
             };
             draft.apps.push(newApp);
@@ -349,12 +432,21 @@ export const useAppDataStore = defineStore('appData', () => {
 
     /**
      * 更新应用
+     *
+     * 改动 URL 时会重新校验重复（排除自身）。
      */
     async function updateApp(id: string, updates: Partial<Omit<AppItem, 'id'>>): Promise<AppItem | null> {
         return mutateMain((draft) => {
             const index = draft.apps.findIndex((app) => app.id === id);
             if (index === -1) return null;
-            draft.apps[index] = { ...draft.apps[index], ...clone(updates), id };
+
+            const patch = clone(updates);
+            if (typeof patch.url === 'string') {
+                patch.url = normalizeUrl(patch.url);
+                assertAppUrlUnique(draft, patch.url, id);
+            }
+
+            draft.apps[index] = { ...draft.apps[index], ...patch, id };
             return draft.apps[index];
         });
     }
@@ -389,11 +481,16 @@ export const useAppDataStore = defineStore('appData', () => {
 
     /**
      * 添加分类
+     *
+     * 名称忽略大小写与空白差异后重复时拒绝创建。
      */
     async function addCategory(category: CategoryInput): Promise<Category> {
         return mutateMain((draft) => {
+            assertCategoryNameUnique(draft, category.name);
+
             const newCategory: Category = {
                 ...clone(category),
+                name: category.name.trim(),
                 id: generateCategoryId()
             };
             if (!newCategory.icon) {
@@ -406,12 +503,21 @@ export const useAppDataStore = defineStore('appData', () => {
 
     /**
      * 更新分类
+     *
+     * 改名时会重新校验同名冲突（排除自身）。
      */
     async function updateCategory(id: string, updates: Partial<Omit<Category, 'id'>>): Promise<Category | null> {
         return mutateMain((draft) => {
             const index = draft.categories.findIndex((category) => category.id === id);
             if (index === -1) return null;
-            draft.categories[index] = { ...draft.categories[index], ...clone(updates), id };
+
+            const patch = clone(updates);
+            if (typeof patch.name === 'string') {
+                assertCategoryNameUnique(draft, patch.name, id);
+                patch.name = patch.name.trim();
+            }
+
+            draft.categories[index] = { ...draft.categories[index], ...patch, id };
             return draft.categories[index];
         });
     }
@@ -545,6 +651,8 @@ export const useAppDataStore = defineStore('appData', () => {
         dataSnapshot,
         getAppsByCategory,
         getCategoryById,
+        findAppByUrl,
+        findCategoryByName,
         init,
         loadData,
         syncNow,

@@ -62,6 +62,7 @@ describe('layout.store', () => {
             showAllCategory: false,
             allViewFlat: true,
             showIconBackground: false,
+            minimalMode: false,
         });
     });
 

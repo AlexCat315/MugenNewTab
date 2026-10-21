@@ -104,7 +104,7 @@ function handleDelete(app: AppItem): void {
 @use '@/styles/mixins' as *;
 
 .category-section {
-    margin-bottom: 32px;
+    margin-bottom: 24px;
     animation: fadeInUp 0.5s ease-out both;
     contain: layout;
 

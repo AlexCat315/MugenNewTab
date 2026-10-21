@@ -8,6 +8,7 @@ import {
     stableStringify,
     deepEqual,
     mergeById,
+    mergeAppList,
     mergeAppNavigatorData,
     mergeUserUiLib,
     mergeSyncData
@@ -194,7 +195,13 @@ describe('mergeById 顺序与 base 为空', () => {
 
 describe('mergeAppNavigatorData', () => {
     const cat = (id: string, name: string): Category => ({ id, name });
-    const app = (id: string, name: string): AppItem => ({ id, name, url: 'https://example.com', category: 'c1' });
+    /** 默认给每个 id 一个独立 URL，避免触发 URL 去重（去重行为另有专门用例） */
+    const app = (id: string, name: string, url = `https://example.com/${id}`): AppItem => ({
+        id,
+        name,
+        url,
+        category: 'c1'
+    });
 
     it('categories 与 apps 分别按 id 合并', () => {
         const base: AppNavigatorData = { categories: [cat('c1', '分类')], apps: [app('a1', '站点')] };
@@ -211,6 +218,82 @@ describe('mergeAppNavigatorData', () => {
         const result = mergeAppNavigatorData(null, undefined, { categories: [cat('c1', '分类')], apps: [] });
         expect(result.categories).toHaveLength(1);
         expect(result.apps).toEqual([]);
+    });
+});
+
+describe('mergeAppList 跨设备 URL 去重', () => {
+    const app = (id: string, name: string, url: string): AppItem => ({ id, name, url, category: 'c1' });
+
+    it('远端与本地指向同一站点（写法不同）时丢弃远端，保留本地', () => {
+        const local = [app('l1', '本地版', 'https://a.com')];
+        const remote = [app('r1', '远端版', 'http://www.a.com/')];
+
+        const result = mergeAppList(null, local, remote);
+        expect(result.map((a) => a.id)).toEqual(['l1']);
+        expect(result[0].name).toBe('本地版');
+    });
+
+    it('URL 不同的远端站点正常追加', () => {
+        const local = [app('l1', '本地站', 'https://a.com')];
+        const remote = [app('r1', '远端站', 'https://b.com')];
+
+        expect(mergeAppList(null, local, remote).map((a) => a.id)).toEqual(['l1', 'r1']);
+    });
+
+    it('远端内部同址重复只保留第一个', () => {
+        const remote = [
+            app('r1', '第一个', 'https://a.com'),
+            app('r2', '第二个', 'https://a.com/')
+        ];
+
+        const result = mergeAppList(null, [], remote);
+        expect(result.map((a) => a.id)).toEqual(['r1']);
+    });
+
+    it('本地自身的重复不做处理（尊重用户现有数据）', () => {
+        const local = [app('l1', '第一个', 'https://a.com'), app('l2', '第二个', 'https://a.com/')];
+
+        expect(mergeAppList(null, local, []).map((a) => a.id)).toEqual(['l1', 'l2']);
+    });
+
+    it('query 不同视为不同站点', () => {
+        const local = [app('l1', 'A', 'https://a.com/?id=1')];
+        const remote = [app('r1', 'B', 'https://a.com/?id=2')];
+
+        expect(mergeAppList(null, local, remote).map((a) => a.id)).toEqual(['l1', 'r1']);
+    });
+});
+
+describe('mergeAppNavigatorData 分类同名合并', () => {
+    it('远端同名分类并入本地分类，引用它的站点改指本地分类', () => {
+        const local: AppNavigatorData = {
+            categories: [{ id: 'c1', name: '工具' }],
+            apps: [{ id: 'l1', name: '本地站', url: 'https://l.com', category: 'c1' }]
+        };
+        const remote: AppNavigatorData = {
+            categories: [{ id: 'c9', name: ' 工具 ' }],
+            apps: [{ id: 'r1', name: '远端站', url: 'https://r.com', category: 'c9' }]
+        };
+
+        const result = mergeAppNavigatorData(null, local, remote);
+        expect(result.categories.map((c) => c.id)).toEqual(['c1']);
+        expect(result.apps.map((a) => a.id)).toEqual(['l1', 'r1']);
+        expect(result.apps.find((a) => a.id === 'r1')!.category).toBe('c1');
+    });
+
+    it('名称不同的远端分类保留，站点分类不变', () => {
+        const local: AppNavigatorData = {
+            categories: [{ id: 'c1', name: '工具' }],
+            apps: []
+        };
+        const remote: AppNavigatorData = {
+            categories: [{ id: 'c9', name: '阅读' }],
+            apps: [{ id: 'r1', name: '远端站', url: 'https://r.com', category: 'c9' }]
+        };
+
+        const result = mergeAppNavigatorData(null, local, remote);
+        expect(result.categories.map((c) => c.id)).toEqual(['c1', 'c9']);
+        expect(result.apps[0].category).toBe('c9');
     });
 });
 
@@ -243,7 +326,13 @@ describe('mergeUserUiLib', () => {
 });
 
 describe('mergeSyncData', () => {
-    const app = (id: string, name: string): AppItem => ({ id, name, url: 'https://example.com', category: 'c1' });
+    /** 默认给每个 id 一个独立 URL，避免触发 URL 去重（去重行为另有专门用例） */
+    const app = (id: string, name: string, url = `https://example.com/${id}`): AppItem => ({
+        id,
+        name,
+        url,
+        category: 'c1'
+    });
 
     it('按同步键合并站点数据与用户图标库', () => {
         const base = {

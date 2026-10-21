@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
 import MainContent from '@/components/layout/MainContent.vue';
 
 describe('MainContent', () => {
+    beforeEach(() => {
+        setActivePinia(createPinia());
+    });
+
     it('渲染标题与默认插槽内容', () => {
         const wrapper = mount(MainContent, {
             props: { title: '测试标题' },

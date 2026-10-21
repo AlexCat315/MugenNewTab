@@ -391,4 +391,120 @@ describe('useAppDataStore', () => {
             expect(/\p{Emoji}/u.test(category.icon ?? '')).toBe(false);
         });
     });
+
+    describe('站点去重', () => {
+        it('同一站点重复添加应抛错', async () => {
+            const store = createStore();
+            await store.init();
+
+            // 默认数据里已有 https://www.bilibili.com
+            await expect(
+                store.addApp({ name: '哔哩哔哩', url: 'https://www.bilibili.com', category: 'dev' })
+            ).rejects.toThrow('该网站已存在');
+            expect(store.apps).toHaveLength(1);
+        });
+
+        it('忽略 www、协议、尾斜杠差异后仍判为重复', async () => {
+            const store = createStore();
+            await store.init();
+
+            await expect(
+                store.addApp({ name: 'B站', url: 'http://bilibili.com/', category: 'dev' })
+            ).rejects.toThrow('该网站已存在：Bilibili');
+        });
+
+        it('不同站点可正常添加', async () => {
+            const store = createStore();
+            await store.init();
+
+            const app = await store.addApp({ name: 'GitHub', url: 'github.com', category: 'dev' });
+            expect(app.url).toBe('https://github.com');
+            expect(store.apps).toHaveLength(2);
+        });
+
+        it('query 不同视为不同站点', async () => {
+            const store = createStore();
+            await store.init();
+
+            await store.addApp({ name: 'A', url: 'https://a.test/?id=1', category: 'dev' });
+            await expect(
+                store.addApp({ name: 'B', url: 'https://a.test/?id=2', category: 'dev' })
+            ).resolves.toBeTruthy();
+        });
+
+        it('updateApp 改成已存在的站点地址应抛错', async () => {
+            const store = createStore();
+            await store.init();
+            const github = await store.addApp({ name: 'GitHub', url: 'https://github.com', category: 'dev' });
+
+            await expect(
+                store.updateApp(github.id, { url: 'https://www.bilibili.com/' })
+            ).rejects.toThrow('该网站已存在');
+        });
+
+        it('updateApp 只改名称不触发自身判重', async () => {
+            const store = createStore();
+            await store.init();
+            const github = await store.addApp({ name: 'GitHub', url: 'https://github.com', category: 'dev' });
+
+            const updated = await store.updateApp(github.id, { name: 'GitHub 主页', url: 'https://github.com/' });
+            expect(updated?.name).toBe('GitHub 主页');
+        });
+
+        it('findAppByUrl 可查到重复站点', async () => {
+            const store = createStore();
+            await store.init();
+
+            expect(store.findAppByUrl('bilibili.com')?.name).toBe('Bilibili');
+            expect(store.findAppByUrl('https://nothing.test')).toBeUndefined();
+            // 排除自身后查不到
+            expect(store.findAppByUrl('bilibili.com', 'app_1')).toBeUndefined();
+        });
+    });
+
+    describe('分类去重', () => {
+        it('同名分类应拒绝创建', async () => {
+            const store = createStore();
+            await store.init();
+
+            await expect(store.addCategory({ name: '开发工具' })).rejects.toThrow('已存在');
+            await expect(store.addCategory({ name: '  开发工具  ' })).rejects.toThrow('已存在');
+            expect(store.categories.filter(c => c.name === '开发工具')).toHaveLength(1);
+        });
+
+        it('名称大小写与全角空格差异视为同名', async () => {
+            const store = createStore();
+            await store.init();
+            await store.addCategory({ name: 'Reading List' });
+
+            await expect(store.addCategory({ name: 'reading　list' })).rejects.toThrow('已存在');
+        });
+
+        it('改名撞到其他分类应抛错', async () => {
+            const store = createStore();
+            await store.init();
+            const custom = await store.addCategory({ name: '自定义' });
+
+            await expect(store.updateCategory(custom.id, { name: '开发工具' })).rejects.toThrow('已存在');
+        });
+
+        it('只改图标不改名不触发自身判重', async () => {
+            const store = createStore();
+            await store.init();
+            const custom = await store.addCategory({ name: '自定义' });
+
+            const updated = await store.updateCategory(custom.id, { icon: './image/icons/star.svg' });
+            expect(updated?.name).toBe('自定义');
+            expect(updated?.icon).toBe('./image/icons/star.svg');
+        });
+
+        it('findCategoryByName 忽略大小写与空白', async () => {
+            const store = createStore();
+            await store.init();
+
+            expect(store.findCategoryByName(' 开发工具 ')?.id).toBe('dev');
+            expect(store.findCategoryByName('不存在的分类')).toBeUndefined();
+            expect(store.findCategoryByName('开发工具', 'dev')).toBeUndefined();
+        });
+    });
 });

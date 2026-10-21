@@ -1,4 +1,5 @@
 import { CLOUD_SYNC_DATA_KEYS, STORAGE_KEYS } from '@/types/storage';
+import { pushCrossDeviceAuth, pullCrossDeviceAuth } from '@/services/crossDeviceSync.service';
 import { deepEqual, mergeSyncData } from '@/utils/syncMerge.util';
 import type { SyncSnapshot } from '@/utils/syncMerge.util';
 import { createGistProvider, SyncProviderError } from '@/services/gistProvider.service';
@@ -67,11 +68,34 @@ export class CloudSyncService {
      */
     async init(): Promise<void> {
         await this.loadSettings();
+
+        // 本机没有 Token 时，尝试从浏览器账号同步区还原（跨设备登录状态）
+        if (!this.token) {
+            await this.adoptCrossDeviceAuth();
+        }
+
         if (this.token) {
             const valid = await this.validateToken(this.token);
             if (valid && this.autoSync) {
                 await this.sync({ silent: true });
             }
+        }
+    }
+
+    /**
+     * 尝试从 storage.sync 还原登录凭据
+     * 解密失败（例如另一台设备用了不同口令）时静默跳过，不影响正常流程
+     */
+    private async adoptCrossDeviceAuth(): Promise<void> {
+        try {
+            const auth = await pullCrossDeviceAuth();
+            if (!auth) return;
+
+            this.token = auth.token;
+            this.providerId = auth.provider as CloudSyncProviderId;
+            await this.saveSettings();
+        } catch (error) {
+            console.warn('[CloudSync] 跨设备登录状态还原失败:', error);
         }
     }
 
@@ -390,9 +414,23 @@ export class CloudSyncService {
         this.token = token;
         this.userInfo = userInfo;
         await this.saveSettings();
+        await this.pushAuthToCrossDevice();
         await this.findOrCreateGist();
         this.ui.showToast(`${provider.name} 账号已连接`, 'success');
         return true;
+    }
+
+    /**
+     * 把当前登录凭据推送到浏览器账号同步区（未启用跨设备同步时为 no-op）
+     */
+    private async pushAuthToCrossDevice(): Promise<void> {
+        try {
+            await pushCrossDeviceAuth(
+                this.token ? { token: this.token, provider: this.providerId } : null
+            );
+        } catch (error) {
+            console.warn('[CloudSync] 跨设备登录状态同步失败:', error);
+        }
     }
 
     /**
@@ -432,6 +470,7 @@ export class CloudSyncService {
         this.lastSyncTime = 0;
         this.providerId = DEFAULT_PROVIDER;
         await this.saveSettings();
+        await this.pushAuthToCrossDevice();
         await this.storage.set(STORAGE_KEYS.CLOUD_SYNC_BASE, null);
         this.ui.showToast('已断开云同步', 'success');
     }

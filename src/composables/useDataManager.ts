@@ -74,6 +74,8 @@ export interface UseDataManagerReturn {
     // 查询辅助
     getAppsByCategory: (categoryId: string) => AppItem[];
     getCategoryById: (id: string) => Category | undefined;
+    findAppByUrl: (url: string, excludeId?: string) => AppItem | undefined;
+    findCategoryByName: (name: string, excludeId?: string) => Category | undefined;
 }
 
 /**
@@ -266,6 +268,14 @@ export function useDataManager(options: UseDataManagerOptions = {}): UseDataMana
         return appDataStore.getCategoryById(id);
     }
 
+    function findAppByUrl(url: string, excludeId?: string): AppItem | undefined {
+        return appDataStore.findAppByUrl(url, excludeId);
+    }
+
+    function findCategoryByName(name: string, excludeId?: string): Category | undefined {
+        return appDataStore.findCategoryByName(name, excludeId);
+    }
+
     return {
         // 状态
         isLoading,
@@ -324,6 +334,8 @@ export function useDataManager(options: UseDataManagerOptions = {}): UseDataMana
         // 查询辅助
         getAppsByCategory,
         getCategoryById,
+        findAppByUrl,
+        findCategoryByName,
     };
 }
 

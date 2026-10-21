@@ -93,6 +93,17 @@ function handlePaginateChange(event: Event): void {
             <label class="layout-settings__toggle">
                 <input
                     type="checkbox"
+                    :checked="layoutStore.minimalMode"
+                    @change="layoutStore.setMinimalMode(($event.target as HTMLInputElement).checked)"
+                />
+                <span>极简约模式（隐藏侧边栏与顶栏，仅保留核心内容）</span>
+            </label>
+        </div>
+
+        <div class="layout-settings__group">
+            <label class="layout-settings__toggle">
+                <input
+                    type="checkbox"
                     :checked="layoutStore.paginate"
                     @change="handlePaginateChange"
                 />

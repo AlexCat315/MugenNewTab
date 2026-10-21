@@ -37,10 +37,10 @@
     --md-sys-color-background-rgb: 255, 248, 249;
 
     // 组件颜色变量 - 深色模式下会被覆盖
-    --card-bg: rgba(200, 200, 200, 0.25);
-    --card-border: rgba(175, 175, 175, 0.2);
-    --card-shadow: 0 2px 8px rgba(1, 1, 1, 0.1);
-    --hover-bg: rgba(255, 255, 255, 0.9);
+    --card-bg: var(--md-sys-color-surface);
+    --card-border: var(--md-sys-color-outline-variant);
+    --card-shadow: 0 2px 8px rgba(1, 1, 1, 0.06);
+    --hover-bg: var(--md-sys-color-surface-variant);
 
     // 动效变量
     --md-easing: cubic-bezier(0.4, 0, 0.2, 1);
