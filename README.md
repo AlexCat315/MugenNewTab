@@ -203,6 +203,84 @@ dist-firefox/  # Firefox
 
 ---
 
+## 🚀 自动发版与 Firefox 自动更新
+
+推一个 tag 就能完成「构建 → 签名 → 发布 → 生成更新清单」，不需要本地打包。
+
+### 发版
+
+```bash
+./scripts/release.sh          # 构建号自动 +1，例如 1.0.0.103 → 1.0.0.104
+./scripts/release.sh 1.0.1.0  # 或指定版本号
+```
+
+脚本会写入两份 manifest 的版本号、提交、打 `v<版本>` tag 并推送。随后
+`.github/workflows/release.yml` 自动执行：
+
+1. `npm ci` + 构建 Firefox / Chromium 两个产物
+2. `web-ext sign --channel unlisted` 调用 AMO 签名 Firefox 包
+3. 打包 Chromium zip
+4. 生成 `updates.json`（含 sha256 校验）
+5. 创建 GitHub Release，附上三个文件
+
+### 首次配置（只需一次）
+
+在仓库 **Settings → Secrets and variables → Actions** 中添加：
+
+| Secret | 值 |
+| --- | --- |
+| `WEB_EXT_API_KEY` | AMO 的 JWT issuer，形如 `user:12345:67` |
+| `WEB_EXT_API_SECRET` | AMO 的 JWT secret |
+
+> Fork 仓库需要在 Actions 页面点一次「I understand my workflows, go ahead and enable them」。
+
+### Firefox 自动更新是怎么生效的
+
+`manifest.firefox.json` 里声明了：
+
+```json
+"browser_specific_settings": {
+  "gecko": {
+    "id": "cyke0315@163.com",
+    "update_url": "https://github.com/AlexCat315/MugenNewTab/releases/latest/download/updates.json"
+  }
+}
+```
+
+Firefox 每 24 小时（`extensions.update.interval`，默认 86400 秒）拉取该 `updates.json`，
+发现 `version` 高于已安装版本就静默下载并安装。
+
+几个必须遵守的约束：
+
+- **扩展 ID 必须固定**（`cyke0315@163.com`）。改 ID 等于换了一个扩展，老用户收不到更新。
+- **版本号不能重复提交**。AMO 对同一版本只接受一次上传，重复会报
+  `This upload has already been submitted`，必须升版本号重试。
+- **`update_url` 一旦发布就尽量不要改**。已安装的扩展只会用自己 manifest 里写死的
+  `update_url` 检查更新，改地址会导致老用户永远收不到更新（只能靠企业策略兜底）。
+- **必须经 AMO 签名**。正式版 Firefox 只安装已签名的扩展，未签名的只能在
+  Developer Edition / Nightly 里关掉 `xpinstall.signatures.required` 后使用。
+
+### 安装方式
+
+Firefox 桌面版：下载 Release 里的 `.xpi`，拖进 `about:addons` 页面，或直接用 Firefox 打开该文件。
+
+> GitHub Releases 返回的 `Content-Type` 是 `application/octet-stream` 而非
+> `application/x-xpinstall`，所以点链接不会自动触发安装，需要手动拖入或打开文件。
+> 更新过程走 Firefox 自己的更新通道，不受这个限制影响。
+
+### 本地调试更新
+
+```bash
+# about:config 里把检查间隔改短（最小 120 秒）
+extensions.update.interval = 120
+# 确认开关是打开的
+extensions.update.enabled = true
+```
+
+然后打开「工具 → 浏览器工具 → 浏览器控制台」，按扩展名过滤即可看到更新请求日志。
+
+---
+
 ## 🧪 测试
 
 项目使用 Vitest 进行单元测试，覆盖 services、stores、composables 与 components。
