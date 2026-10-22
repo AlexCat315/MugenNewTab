@@ -22,10 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -105,8 +105,12 @@ jobs:
             --channel unlisted
 
           # 统一改名为固定格式，方便 updates.json 里拼稳定链接
+          # web-ext 通常已经按 mugennewtab-<version>.xpi 命名，同文件时跳过 mv
           SRC="$(ls artifacts/*.xpi | head -n 1)"
-          mv "$SRC" "artifacts/mugennewtab-${VERSION}.xpi"
+          DST="artifacts/mugennewtab-${VERSION}.xpi"
+          if [ "$SRC" != "$DST" ]; then
+            mv "$SRC" "$DST"
+          fi
           ls -lh artifacts
 
       - name: Package Chromium zip
@@ -120,7 +124,10 @@ jobs:
             --overwrite-dest
 
           SRC="$(ls artifacts/*.zip | head -n 1)"
-          mv "$SRC" artifacts/mugen_newtab-chromium.zip
+          DST="artifacts/mugen_newtab-chromium.zip"
+          if [ "$SRC" != "$DST" ]; then
+            mv "$SRC" "$DST"
+          fi
           ls -lh artifacts
 
       # 生成 Firefox 更新清单：update_url 指向的 /releases/latest/download/updates.json
