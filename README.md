@@ -250,6 +250,10 @@ dist-firefox/  # Firefox
 4. 生成 `updates.json`（含 sha256 校验）
 5. 创建 GitHub Release，附上三个文件
 
+推送失败（网络抖动、`SSL_ERROR_SYSCALL` 等）时提交和 tag 已经在本地建好，
+**直接重新运行 `./scripts/release.sh` 即可**：脚本会检测到 HEAD 上未推送的 tag，
+跳过版本递增只做补推，不会白白消耗一个版本号。
+
 ### 首次配置（只需一次）
 
 在仓库 **Settings → Secrets and variables → Actions** 中添加：
