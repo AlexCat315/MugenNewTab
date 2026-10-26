@@ -12,7 +12,7 @@
 - **拖拽排序**：长按应用卡片即可拖拽排序，支持同分类排序和跨分类移动
 - **隐藏站点**：支持隐藏不常用的站点，双击左上角 Logo 快速切换显示/隐藏
 - **全局搜索**：集成 16 个搜索引擎，快捷键 `Ctrl+K` / `Cmd+K` 唤起，支持关键词补全
-- **个性化主题**：12 套内置主题（含深色模式），基于 CSS 变量动态切换
+- **个性化主题**：12 套主题配色，每套都有「明亮 / 深色」两种变体（共 24 个），可单独切换明暗或跟随系统深色偏好
 - **壁纸背景**：支持自定义壁纸 URL 或本地图片上传，可调节透明度、模糊度、遮罩
 - **数据管理**：应用/分类的增删改查，数据导入/导出（JSON 格式备份）
 - **UI 图标库**：约 48 个系统 SVG 图标 + 用户自定义图标管理
@@ -96,7 +96,8 @@ MugenNewTab/
 ├── build-firefox.sh            # Firefox 扩展构建脚本
 ├── sign-firefox.sh             # 扩展打包/签名脚本（同时生成 Chromium .zip 与 Firefox .xpi/.zip）
 ├── scripts/
-│   └── postbuild.js            # 构建后根据目标生成 <产物目录>/manifest.json
+│   ├── postbuild.js            # 构建后根据目标生成 <产物目录>/manifest.json
+│   └── gen-themes.mjs          # 生成 themes.json：派生明/暗变体 + 对比度体检
 ├── package.json
 ├── vite.config.ts
 ├── vitest.config.ts

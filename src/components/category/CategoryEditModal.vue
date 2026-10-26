@@ -541,8 +541,7 @@ const activePresetIcon = computed(() =>
 }
 
 // 深色模式适配
-:global(html.dark-mode),
-:global(body.dark-mode) {
+:global(html.dark-mode) {
     .mnt-category-form__preview-box--light {
         background: var(--md-sys-color-surface);
     }

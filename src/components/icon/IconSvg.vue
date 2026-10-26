@@ -8,7 +8,7 @@
         :is="tag"
         class="icon-svg"
         :class="{
-            'is-monochrome': monochrome,
+            'is-monochrome': isMonochromeIcon,
             'is-inline': isInlineSvg,
         }"
         :style="rootStyle"
@@ -156,6 +156,38 @@ const isInlineSvg = computed(() => {
         return true;
     }
     return props.inline && isInlineSvgString(effectiveSource.value);
+});
+
+/**
+ * 是否为系统图标库里的裸图标名（如 search / menu）
+ * 与 resolveNameOrUrl 的判定保持一致。
+ */
+function isSystemIconName(value?: string): boolean {
+    if (!value) {
+        return false;
+    }
+    return /^[\w-]+$/i.test(value) && !value.includes('/') && !value.includes('.');
+}
+
+/**
+ * 是否需要按单色图标处理（深色模式下反转成白色）
+ *
+ * 系统图标库 public/image/icons/*.svg 全是 `fill="#000000"` 的纯黑图形，
+ * 渲染成 <img> 后无法跟随 currentColor，深色背景上就是"看不见"。
+ * 之前靠每个调用点手写 monochrome，漏一处就黑一块（侧栏搜索、顶栏折叠/个性化、
+ * FAB 主图标都漏了），所以这里自动判定：
+ * - name 是系统图标名、且没有显式 src：自动单色
+ * - 显式传了 src（应用品牌图标，通常是彩色的）：绝不反转
+ * - path/paths 内联图标：用 currentColor 绘制，反转会反向，不自动处理
+ */
+const isMonochromeIcon = computed(() => {
+    if (props.monochrome) {
+        return true;
+    }
+    if (isInlineSvg.value || props.src) {
+        return false;
+    }
+    return isSystemIconName(props.name);
 });
 
 /** 内联 SVG 内容 */

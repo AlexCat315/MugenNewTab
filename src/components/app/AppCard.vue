@@ -301,8 +301,7 @@ function handleDelete(event: MouseEvent): void {
 }
 
 // 深色模式覆盖
-:global(html.dark-mode),
-:global(body.dark-mode) {
+:global(html.dark-mode) {
     .app-card:hover {
         border-color: rgba(255, 255, 255, 0.15);
         background: rgba(255, 255, 255, 0.12);

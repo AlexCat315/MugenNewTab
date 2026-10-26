@@ -61,6 +61,29 @@ describe('IconSvg', () => {
         expect(wrapper.classes()).toContain('is-monochrome');
     });
 
+    it('系统图标（name 且无 src）自动按单色处理，深色模式下才反得成白色', () => {
+        const wrapper = mount(IconSvg, { props: { name: 'search' } });
+        expect(wrapper.classes()).toContain('is-monochrome');
+    });
+
+    it('显式 src 的应用品牌图标不自动反转', async () => {
+        const wrapper = mount(IconSvg, {
+            props: { src: 'https://example.com/logo.png', name: 'site' },
+        });
+        await flushPromises();
+        expect(wrapper.classes()).not.toContain('is-monochrome');
+    });
+
+    it('内联 path 图标用 currentColor 绘制，不自动反转', () => {
+        const wrapper = mount(IconSvg, { props: { path: 'M0 0h24v24H0z' } });
+        expect(wrapper.classes()).not.toContain('is-monochrome');
+    });
+
+    it('name 不是系统图标名（是 URL）时不自动反转', () => {
+        const wrapper = mount(IconSvg, { props: { name: 'https://example.com/a.svg' } });
+        expect(wrapper.classes()).not.toContain('is-monochrome');
+    });
+
     it('内联 SVG 字符串以内联方式渲染', () => {
         const svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="10"/></svg>';
         const wrapper = mount(IconSvg, {
