@@ -22,14 +22,47 @@ describe('IconSvg', () => {
         vi.restoreAllMocks();
     });
 
-    it('根据 name 渲染系统 SVG 图标', () => {
+    it('根据 name 渲染系统 SVG 图标（mask 方式，颜色跟随 currentColor）', () => {
         const wrapper = mount(IconSvg, {
             props: { name: 'home', size: 24, monochrome: true, alt: '首页' }
         });
-        const img = wrapper.find('img');
-        expect(img.exists()).toBe(true);
-        expect(img.attributes('src')).toBe('/image/icons/home.svg');
-        expect(img.attributes('alt')).toBe('首页');
+        // 系统图标不再用 <img>，而是把 SVG 当遮罩，背景色取 currentColor
+        expect(wrapper.find('img').exists()).toBe(false);
+        const mask = wrapper.find('.icon-svg__mask');
+        expect(mask.exists()).toBe(true);
+        expect(mask.attributes('style')).toContain('/image/icons/home.svg');
+        // 无障碍名称留在根节点上，遮罩本身对读屏隐藏
+        expect(wrapper.attributes('aria-label')).toBe('首页');
+        expect(mask.attributes('aria-hidden')).toBe('true');
+    });
+
+    it('color 属性可以给系统图标上色（不再被 img 的黑色限制）', () => {
+        const wrapper = mount(IconSvg, {
+            props: { name: 'palette', color: 'var(--md-sys-color-primary)' }
+        });
+        const style = wrapper.attributes('style') ?? '';
+        expect(style).toContain('--icon-fill: var(--md-sys-color-primary)');
+        expect(wrapper.find('.icon-svg__mask').exists()).toBe(true);
+    });
+
+    it('src 指向内置 image/icons 下的 svg 时同样走 mask，并归一化成绝对路径', () => {
+        const wrapper = mount(IconSvg, { props: { src: './image/icons/folder.svg' } });
+        expect(wrapper.find('img').exists()).toBe(false);
+        const mask = wrapper.find('.icon-svg__mask');
+        expect(mask.exists()).toBe(true);
+        // 相对路径必须归一化：--icon-mask 会被样式表里的 mask-image: var() 使用，
+        // 相对路径会按样式表位置解析（打包后在 /js/ 下），导致 404
+        expect(mask.attributes('style')).toContain('/image/icons/folder.svg');
+        expect(mask.attributes('style')).not.toContain('./image/icons/folder.svg');
+    });
+
+    it('远程图片图标仍然用 <img>，不会被当成遮罩', async () => {
+        const wrapper = mount(IconSvg, {
+            props: { src: 'https://example.com/favicon.png' },
+        });
+        await flushPromises();
+        expect(wrapper.find('.icon-svg__mask').exists()).toBe(false);
+        expect(wrapper.find('img').attributes('src')).toBe('https://example.com/favicon.png');
     });
 
     it('优先使用 src 属性', async () => {
@@ -61,9 +94,11 @@ describe('IconSvg', () => {
         expect(wrapper.classes()).toContain('is-monochrome');
     });
 
-    it('系统图标（name 且无 src）自动按单色处理，深色模式下才反得成白色', () => {
+    it('系统图标（name 且无 src）自动标记为单色图标', () => {
         const wrapper = mount(IconSvg, { props: { name: 'search' } });
         expect(wrapper.classes()).toContain('is-monochrome');
+        // 但走的是 mask，不需要 filter 反转
+        expect(wrapper.find('img').exists()).toBe(false);
     });
 
     it('显式 src 的应用品牌图标不自动反转', async () => {

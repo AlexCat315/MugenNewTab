@@ -531,7 +531,7 @@ const modalBodyStyle = {
         .icon-svg {
             width: 18px;
             height: 18px;
-            filter: brightness(0) invert(1);
+            color: var(--md-sys-color-on-primary);
         }
     }
 

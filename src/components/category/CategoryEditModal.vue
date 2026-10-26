@@ -425,6 +425,9 @@ const activePresetIcon = computed(() =>
         &--dark {
             background: #1c1b1f;
             border-color: rgba(255, 255, 255, 0.12);
+            // 内置单色图标走 CSS mask，颜色取 currentColor，
+            // 所以深色预览盒直接给白色，不再依赖 --icon-filter 反转
+            color: #ffffff;
         }
     }
 

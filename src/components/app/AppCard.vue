@@ -61,7 +61,7 @@ const iconSrc = computed(() => {
 
 const iconIsImage = computed(() => isImageIcon(iconSrc.value));
 
-/** 是否已设置图标（未设置时显示默认站点图标，保持彩色不加单色滤镜） */
+/** 是否已设置图标（未设置时显示默认站点图标，走系统图标遮罩、颜色跟随主题） */
 const hasIcon = computed(() => !!iconSrc.value);
 
 function handleClick(event: MouseEvent): void {

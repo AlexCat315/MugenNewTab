@@ -18,6 +18,15 @@
         <template v-if="isInlineSvg">
             <span class="icon-svg__inline" v-html="sanitizedSvg"></span>
         </template>
+        <!--
+            内置单色图标（image/icons/*.svg）用 CSS mask 渲染：
+            图形当遮罩、颜色由 background-color: currentColor 提供，
+            于是 color / currentColor / 主题变量都能直接生效，
+            深色模式下也不必再靠 filter 反转。
+        -->
+        <template v-else-if="isMaskIcon">
+            <span class="icon-svg__mask" :style="maskStyle" aria-hidden="true"></span>
+        </template>
         <template v-else>
             <!--
                 解析缓存期间不渲染 <img>：src 为空会立即触发 error，
@@ -56,9 +65,9 @@ interface Props {
     fallback?: string;
     /** 图标尺寸，默认 24（单位 px） */
     size?: number | string;
-    /** 颜色覆盖（对内联 SVG 有效） */
+    /** 颜色覆盖（内联 SVG 与系统图标均生效；图片图标不生效） */
     color?: string;
-    /** 是否为单色图标，深色模式下自动反转 */
+    /** 是否为单色图标：图片图标在深色模式下自动反转 */
     monochrome?: boolean;
     /** 无障碍替代文本 */
     alt?: string;
@@ -159,35 +168,52 @@ const isInlineSvg = computed(() => {
 });
 
 /**
- * 是否为系统图标库里的裸图标名（如 search / menu）
- * 与 resolveNameOrUrl 的判定保持一致。
+ * 是否为「内置单色图标」：public/image/icons/*.svg
+ *
+ * 这批文件全是 `fill="#000000"` 的纯黑图形，既没有品牌色也不需要保留颜色，
+ * 渲染成 <img> 后无法跟随 currentColor（深色背景上直接看不见），
+ * 所以统一改成 CSS mask 渲染：图形当遮罩、颜色取 currentColor。
  */
-function isSystemIconName(value?: string): boolean {
-    if (!value) {
-        return false;
+const BUILTIN_ICON_SRC_PATTERN = /(?:^|\/)(image\/icons\/[\w-]+\.svg)$/i;
+
+/**
+ * 归一化内置图标地址，返回站点绝对路径 /image/icons/xxx.svg；非内置图标返回空串
+ *
+ * 必须归一化：遮罩地址是通过 --icon-mask 交给样式表里的 mask-image: var(...) 使用的，
+ * 而自定义属性里的 url() 会按「使用它的那条规则所在的样式表」解析，
+ * 不是按元素所在文档解析。打包后样式表在 /js/ 下，`./image/icons/x.svg`
+ * 就会被解析成 /js/image/icons/x.svg 而 404（开发模式样式内联在文档里，看不出来）。
+ */
+function normalizeBuiltinIconSource(source?: string): string {
+    if (!source) {
+        return '';
     }
-    return /^[\w-]+$/i.test(value) && !value.includes('/') && !value.includes('.');
+    const match = BUILTIN_ICON_SRC_PATTERN.exec(source);
+    return match ? `/${match[1]}` : '';
+}
+
+function isBuiltinIconSource(source?: string): boolean {
+    return !!normalizeBuiltinIconSource(source);
 }
 
 /**
- * 是否需要按单色图标处理（深色模式下反转成白色）
+ * 是否需要按单色图标处理（图片图标在深色模式下反转成白色）
  *
- * 系统图标库 public/image/icons/*.svg 全是 `fill="#000000"` 的纯黑图形，
- * 渲染成 <img> 后无法跟随 currentColor，深色背景上就是"看不见"。
- * 之前靠每个调用点手写 monochrome，漏一处就黑一块（侧栏搜索、顶栏折叠/个性化、
- * FAB 主图标都漏了），所以这里自动判定：
- * - name 是系统图标名、且没有显式 src：自动单色
- * - 显式传了 src（应用品牌图标，通常是彩色的）：绝不反转
+ * 内置单色图标已经走 mask（见 isMaskIcon），颜色天然跟随 currentColor，
+ * 不再需要 filter 反转；这个标记只对仍然走 <img> 的图片图标有意义。
+ * 自动判定规则：
+ * - 内置单色图标（系统图标名 / image/icons 下的 svg）：自动单色
+ * - 显式传了远程或 data URL（应用品牌图标，通常是彩色的）：绝不反转
  * - path/paths 内联图标：用 currentColor 绘制，反转会反向，不自动处理
  */
 const isMonochromeIcon = computed(() => {
     if (props.monochrome) {
         return true;
     }
-    if (isInlineSvg.value || props.src) {
+    if (isInlineSvg.value) {
         return false;
     }
-    return isSystemIconName(props.name);
+    return isBuiltinIconSource(effectiveSource.value);
 });
 
 /** 内联 SVG 内容 */
@@ -267,6 +293,29 @@ const currentSrc = computed(() => {
     return resolvedSource.value;
 });
 
+/** 遮罩图地址：内置图标是扩展内置文件，不经媒体缓存，统一用站点绝对路径 */
+const maskUrl = computed(() => {
+    const source = resolvedSource.value || effectiveSource.value;
+    return normalizeBuiltinIconSource(source);
+});
+
+/**
+ * 内置单色图标一律走 CSS mask 渲染
+ *
+ * mask 渲染要求图形是「纯单色轮廓」，image/icons 下的 svg 正好全是
+ * fill="#000000" 的纯黑图形，天生适合当遮罩。
+ * 品牌图标（src 指向远程 / 用户上传的图片）是彩色的，必须继续用 <img>。
+ */
+const isMaskIcon = computed(() => !!maskUrl.value);
+
+/** 遮罩图以 CSS 变量注入，具体尺寸 / 重复方式在样式里声明 */
+const maskStyle = computed(() => {
+    if (!maskUrl.value) {
+        return undefined;
+    }
+    return { '--icon-mask': `url("${maskUrl.value}")` };
+});
+
 const safeAlt = computed(() => props.alt?.trim() ?? '');
 
 const numericSize = computed(() => {
@@ -333,6 +382,26 @@ function onImageLoad(event: Event) {
         pointer-events: none;
     }
 
+    /*
+      系统图标遮罩：图形来自 --icon-mask，颜色来自 currentColor。
+      显式 color 属性会同时写进 --icon-fill，这里优先用它，保持一致。
+    */
+    &__mask {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background-color: var(--icon-fill, currentColor);
+        -webkit-mask-image: var(--icon-mask);
+        mask-image: var(--icon-mask);
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        pointer-events: none;
+    }
+
     &__inline {
         display: flex;
         align-items: center;
@@ -347,6 +416,10 @@ function onImageLoad(event: Event) {
         }
     }
 
+    /*
+      只对仍然走 <img> 的图片图标做深色反转；
+      __mask 不在选择器里，它的颜色由 currentColor 决定，不能反。
+    */
     &.is-monochrome &__img,
     &.is-monochrome :deep(svg) {
         filter: var(--icon-filter, none);

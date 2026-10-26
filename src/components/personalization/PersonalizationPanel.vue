@@ -267,7 +267,7 @@ function handleEsc(event: KeyboardEvent): void {
             color: var(--md-sys-color-on-primary);
 
             :deep(.icon-svg) {
-                filter: brightness(0) invert(1);
+                color: var(--md-sys-color-on-primary);
             }
         }
     }

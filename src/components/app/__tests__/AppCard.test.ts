@@ -120,14 +120,15 @@ describe('AppCard', () => {
         expect(byDefault.find('.app-card').classes()).not.toContain('no-icon-bg');
     });
 
-    it('未设置图标时显示默认站点图标（彩色，无单色滤镜）', () => {
+    it('未设置图标时显示默认站点图标（系统图标遮罩，颜色跟随主题）', () => {
         const app = createApp({ icon: undefined });
         const wrapper = mount(AppCard, { props: { app } });
 
-        const img = wrapper.find('.app-card__icon img');
-        expect(img.exists()).toBe(true);
-        expect(img.attributes('src')).toBe('/image/icons/site.svg');
-        expect(wrapper.find('.app-card__icon .icon-svg').classes()).not.toContain('is-monochrome');
+        // 没有自定义图标 → 退回系统图标库的 site.svg，走 mask 渲染
+        expect(wrapper.find('.app-card__icon img').exists()).toBe(false);
+        const mask = wrapper.find('.app-card__icon .icon-svg__mask');
+        expect(mask.exists()).toBe(true);
+        expect(mask.attributes('style')).toContain('/image/icons/site.svg');
     });
 
     it('图标加载失败时回退为默认站点图标', async () => {
