@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import AppCard from '@/components/app/AppCard.vue';
+import { mediaCacheService } from '@/services/mediaCache.service';
 import type { AppItem } from '@/types/app';
 
 function createApp(overrides: Partial<AppItem> = {}): AppItem {
@@ -19,6 +20,9 @@ function createApp(overrides: Partial<AppItem> = {}): AppItem {
 describe('AppCard', () => {
     beforeEach(() => {
         setActivePinia(createPinia());
+        // 远程图标先查缓存再抓取：固定为「未命中且抓不到」，避免测试真的发网络请求
+        vi.spyOn(mediaCacheService, 'resolve').mockResolvedValue(null);
+        vi.spyOn(mediaCacheService, 'fetchAndCache').mockResolvedValue(null);
     });
 
     afterEach(() => {
@@ -130,6 +134,8 @@ describe('AppCard', () => {
         const app = createApp({ icon: 'https://example.com/favicon.ico' });
         const wrapper = mount(AppCard, { props: { app } });
 
+        // 缓存解析是异步的，解析完成前不渲染 <img>
+        await flushPromises();
         const img = wrapper.find('.app-card__icon img');
         await img.trigger('error');
         expect(img.attributes('src')).toBe('/image/icons/site.svg');

@@ -3,13 +3,21 @@
  * 覆盖系统图标渲染、src 优先、错误回退、emoji 拒绝与内联 SVG。
  */
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mount, flushPromises } from '@vue/test-utils';
 import IconSvg from '@/components/icon/IconSvg.vue';
+import { mediaCacheService } from '@/services/mediaCache.service';
 
 const PLACEHOLDER_PATTERN = /^data:image\/svg\+xml/;
 
 describe('IconSvg', () => {
+    beforeEach(() => {
+        // 远程图标会先查缓存再抓取：测试里直接判定「未命中且抓不到」，
+        // 避免真的发网络请求，同时走「回退到原始地址」的分支
+        vi.spyOn(mediaCacheService, 'resolve').mockResolvedValue(null);
+        vi.spyOn(mediaCacheService, 'fetchAndCache').mockResolvedValue(null);
+    });
+
     afterEach(() => {
         vi.restoreAllMocks();
     });
@@ -24,10 +32,11 @@ describe('IconSvg', () => {
         expect(img.attributes('alt')).toBe('首页');
     });
 
-    it('优先使用 src 属性', () => {
+    it('优先使用 src 属性', async () => {
         const wrapper = mount(IconSvg, {
             props: { src: 'https://example.com/icon.png', name: 'home' }
         });
+        await flushPromises();
         expect(wrapper.find('img').attributes('src')).toBe('https://example.com/icon.png');
     });
 
@@ -92,10 +101,13 @@ describe('IconSvg', () => {
         const wrapper = mount(IconSvg, {
             props: { src: 'invalid.png', fallback: 'home' },
         });
-        const img = wrapper.find('img');
-        await img.trigger('error');
-        expect(img.attributes('src')).toBe('/image/icons/home.svg');
+        await wrapper.find('img').trigger('error');
+        expect(wrapper.find('img').attributes('src')).toBe('/image/icons/home.svg');
+
         await wrapper.setProps({ src: 'https://example.com/ok.png' });
-        expect(img.attributes('src')).toBe('https://example.com/ok.png');
+        await flushPromises();
+
+        // 解析缓存期间 <img> 不渲染，元素会重建，所以重新查一次
+        expect(wrapper.find('img').attributes('src')).toBe('https://example.com/ok.png');
     });
 });

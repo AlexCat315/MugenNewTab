@@ -19,7 +19,12 @@
             <span class="icon-svg__inline" v-html="sanitizedSvg"></span>
         </template>
         <template v-else>
+            <!--
+                解析缓存期间不渲染 <img>：src 为空会立即触发 error，
+                从而被误判成「图标加载失败」而永久回退到占位图。
+            -->
             <img
+                v-if="currentSrc"
                 class="icon-svg__img"
                 :src="currentSrc"
                 :alt="safeAlt"
@@ -39,7 +44,7 @@ import {
     getSystemIconUrl,
     createPlaceholderSvg,
 } from '@/utils/image.util';
-import { iconCacheService } from '@/services/iconCache.service';
+import { mediaCacheService } from '@/services/mediaCache.service';
 
 /** 组件接收的属性 */
 interface Props {
@@ -179,32 +184,42 @@ const resolvedFallback = computed(() => {
     return resolved !== effectiveSource.value ? resolved : SYSTEM_PLACEHOLDER;
 });
 
-/** 当前源是否为可缓存的远程图标地址 */
-const isRemoteSource = computed(() => {
-    return !isInlineSvg.value && iconCacheService.isCacheableUrl(effectiveSource.value);
-});
-
-/** 从 IndexedDB 缓存解析出的对象地址（未命中时为 null） */
-const cachedObjectUrl = ref<string | null>(null);
+/**
+ * 实际用于渲染的地址
+ *
+ * 空串表示「还在解析缓存」，此时不渲染网络地址——否则每次打开新标签页
+ * 都会先按网络地址发一遍请求，缓存等于白做。解析完再决定用 blob: 还是网络地址。
+ */
+const resolvedSource = ref('');
 
 /** 当前源的图片加载失败次数（需在 watch 之前声明：watch immediate 会立即访问） */
 const imageErrorCount = ref(0);
 
-// 远程图标优先尝试命中缓存；缓存不可用时静默回退到网络加载
+// 远程图标：先查缓存，未命中再抓一次并缓存（只发一次请求），失败才回退网络地址
 watch(
     effectiveSource,
     source => {
-        cachedObjectUrl.value = null;
+        resolvedSource.value = '';
         // 源变化时重置错误计数，让新地址有机会正常加载（否则会一直停留在回退图）
         imageErrorCount.value = 0;
-        if (!iconCacheService.isCacheableUrl(source)) {
+
+        if (!mediaCacheService.isCacheableUrl(source)) {
+            resolvedSource.value = source;
             return;
         }
-        void iconCacheService.resolve(source).then(objectUrl => {
-            if (objectUrl && effectiveSource.value === source) {
-                cachedObjectUrl.value = objectUrl;
+
+        void (async () => {
+            const cached = await mediaCacheService.resolve(source);
+            if (effectiveSource.value !== source) return;
+            if (cached) {
+                resolvedSource.value = cached;
+                return;
             }
-        });
+            const fetched = await mediaCacheService.fetchAndCache(source, 'icon');
+            if (effectiveSource.value !== source) return;
+            // 抓不到（跨域被拦等）时退回原始地址，图标仍能显示
+            resolvedSource.value = fetched ?? source;
+        })();
     },
     { immediate: true }
 );
@@ -214,12 +229,10 @@ const currentSrc = computed(() => {
     if (isInlineSvg.value) {
         return '';
     }
-    if (imageErrorCount.value === 0 && cachedObjectUrl.value) {
-        return cachedObjectUrl.value;
+    if (imageErrorCount.value > 0 && resolvedFallback.value) {
+        return resolvedFallback.value;
     }
-    return imageErrorCount.value > 0 && resolvedFallback.value
-        ? resolvedFallback.value
-        : effectiveSource.value;
+    return resolvedSource.value;
 });
 
 const safeAlt = computed(() => props.alt?.trim() ?? '');
@@ -244,11 +257,11 @@ const rootStyle = computed(() => {
 
 function onImageError(event: Event) {
     const img = event.target as HTMLImageElement | null;
-    if (img && cachedObjectUrl.value && img.src === cachedObjectUrl.value) {
+    if (img && resolvedSource.value.startsWith('blob:')) {
         // 缓存内容损坏：移除缓存并回退到原始网络地址重新加载
         const source = effectiveSource.value;
-        cachedObjectUrl.value = null;
-        void iconCacheService.evict(source);
+        void mediaCacheService.evict(source);
+        resolvedSource.value = source;
         return;
     }
     // 只在首次失败时切换回退图；回退图自身再失败时不再重复赋值 img.src，
@@ -262,11 +275,7 @@ function onImageError(event: Event) {
 }
 
 function onImageLoad(event: Event) {
-    const img = event.target as HTMLImageElement | null;
-    if (isRemoteSource.value && img && img.src === effectiveSource.value) {
-        // 网络加载成功：后台写入 IndexedDB 缓存，供下次打开直接使用
-        void iconCacheService.cache(effectiveSource.value);
-    }
+    // 缓存写入已在 fetchAndCache 里完成，这里只负责向上抛事件
     emit('load', event);
 }
 </script>
