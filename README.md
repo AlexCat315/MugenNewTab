@@ -248,9 +248,13 @@ dist-firefox/  # Firefox
 ### 发版
 
 ```bash
-./scripts/release.sh          # 构建号自动 +1，例如 1.0.0.103 → 1.0.0.104
-./scripts/release.sh 1.0.1.0  # 或指定版本号
+./scripts/release.sh          # 版本号自动 +1（基于最新 tag / manifest），
+                              # 例如 1.0.0.110 → 1.0.0.111，1.0.1.0 → 1.0.1.1
+./scripts/release.sh 1.0.2.0  # 或指定版本号（必须大于已发布的最新版本）
 ```
+
+版本号以 git tag 与 manifest 为准，由 `scripts/resolve-version.js` 统一解析，
+不再使用可被意外清零的 `.build-num`。
 
 脚本会写入三份 manifest（Chrome / Edge / Firefox）的版本号、提交、打 `v<版本>` tag 并推送。随后
 `.github/workflows/release.yml` 自动执行：
