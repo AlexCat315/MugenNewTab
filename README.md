@@ -2,7 +2,7 @@
 
 一个基于 **Material Design 3** 设计的纯前端新标签页导航应用，同时也是一个 **Chrome / Firefox 浏览器扩展（Manifest V3）**。它提供统一的应用导航中心，用于管理和快速访问各类开发者工具、外部链接和自定义网站。
 
-![MugenNewTab](./public/image/logo/mugen.png)
+![MugenNewTab](./public/image/logo/logo_girl-256.png)
 
 ---
 
@@ -73,8 +73,8 @@ MugenNewTab/
 ├── index.html                  # 主入口（网页版 & 扩展新标签页）
 ├── view/
 │   └── popup.html              # 扩展弹出窗口入口
-├── manifest.json               # Chrome / Chromium Manifest V3（新 Logo 图标）
-├── manifest.edge.json          # Microsoft Edge Manifest V3（沿用旧 Logo 图标）
+├── manifest.json               # Chrome / Chromium Manifest V3（logo_girl 图标）
+├── manifest.edge.json          # Microsoft Edge Manifest V3（logo_girl 图标，全浏览器统一）
 ├── manifest.firefox.json       # Firefox Manifest V3
 ├── public/                     # 静态资源（构建时原样复制到产物目录）
 │   ├── config/                 # JSON 配置：主题、搜索引擎、默认数据
@@ -155,7 +155,7 @@ npx vue-tsc --noEmit
 
 ```
 dist-chrome/   # Chrome / Chromium
-dist-edge/     # Microsoft Edge（图标沿用旧 Logo）
+dist-edge/     # Microsoft Edge（图标统一为 logo_girl）
 dist-firefox/  # Firefox
 ├── index.html
 ├── view/
